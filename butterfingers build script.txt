@@ -1,0 +1,11 @@
+sudo apt update
+sudo apt install build-essential git
+sudo apt install libfprint-2-2
+sudo apt install libfprint-2-dev libfprint-2-doc biometric-driver-community-multidevice
+curl https://sh.rustup.rs -sSf | sh
+sudo apt install librust-gobject-sys-dev
+sudo apt install librust-gio-sys-dev
+sudo apt install librust-glib-sys-dev
+sudo apt install pkg-config
+sudo apt install cmake libssh-dev
+sudo apt install librust-clang-sys-dev
