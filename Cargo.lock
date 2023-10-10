@@ -107,6 +107,7 @@ dependencies = [
 name = "butterfingers"
 version = "0.1.0"
 dependencies = [
+ "glib",
  "libfprint-rs",
  "sqlx",
 ]

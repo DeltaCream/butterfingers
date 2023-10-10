@@ -14,13 +14,15 @@ fn main() {
 
     let devices = context.devices();
 
-    let dev = devices.get(0).unwrap();
+    let dev = devices.get(0).expect("Devices could not be retrieved");
 
-    dev.open_sync(None).unwrap();
+    dev.open_sync(None).expect("Device could not be opened");
 
     let template = FpPrint::new(&dev);
     template.set_finger(FpFinger::RightIndex);
     template.set_username(&user);
+
+    println!("Username of the fingerprint: {}", template.username().expect("Fingerprint username could not be retrieved"));
 
     let counter = Arc::new(Mutex::new(0));
 
