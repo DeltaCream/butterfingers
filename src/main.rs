@@ -29,7 +29,8 @@ fn main() {
     let _new_print = dev
         .enroll_sync(template, None, Some(progress_cb), Some(counter.clone()))
         .unwrap();
-
+        
+    println!("{:?}",_new_print.username().unwrap());
     println!("Total enroll stages: {}", counter.lock().unwrap());
 
     //Enrolling a fingerprint example code
