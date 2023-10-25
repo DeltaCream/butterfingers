@@ -11,5 +11,5 @@ libfprint-rs = "0.2.0"
 sqlx = { version = "0.7.2", features = ["mysql"] }
 
 [[bin]]
-name = "butterfingersd"
+name = "butterfingersd-enroll"
 path = "src/main.rs"

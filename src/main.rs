@@ -5,10 +5,10 @@ use libfprint_rs::{FpContext, FpPrint, FpDevice, FpFinger};
 
 fn main() {
 
-    println!("For whom will you scan the fingerprint?");
+    // println!("For whom will you scan the fingerprint?");
 
-    let mut user = String::new();
-    io::stdin().read_line(&mut user).expect("Failed to get username");
+    // let mut user = String::new();
+    // io::stdin().read_line(&mut user).expect("Failed to get username");
 
     let context = FpContext::new();
 
@@ -16,11 +16,15 @@ fn main() {
 
     let dev = devices.get(0).expect("Devices could not be retrieved");
 
+    println!("{:#?}", dev.scan_type()); //print the scan type of the device
+    println!("{:#?}", dev.features());  //print the features of the device
+
+
     dev.open_sync(None).expect("Device could not be opened");
 
-    let template = FpPrint::new(&dev);
+    let template = FpPrint::new(dev);    //&dev); //&dev because dev might be used later
     template.set_finger(FpFinger::RightIndex);
-    template.set_username(&user);
+    template.set_username("test");  //&user);
 
     println!("Username of the fingerprint: {}", template.username().expect("Fingerprint username could not be retrieved"));
 
@@ -29,8 +33,10 @@ fn main() {
     let _new_print = dev
         .enroll_sync(template, None, Some(progress_cb), Some(counter.clone()))
         .unwrap();
-        
-    println!("{:?}",_new_print.username().unwrap());
+
+    println!("new_print contents: {:#?}",_new_print);   //print the FpPrint struct
+    println!("new_print username: {:#?}",_new_print.username().unwrap());   //print the username of the FpPrint
+
     println!("Total enroll stages: {}", counter.lock().unwrap());
 
     //Enrolling a fingerprint example code
@@ -148,7 +154,7 @@ pub fn progress_cb(
         let mut d = data.lock().unwrap();
         *d += 1;
     }
-    println!("Enroll stage: {}", enroll_stage);
+    println!("Progress_cb Enroll stage: {}", enroll_stage);
 }
 
 pub fn enroll_cb(
@@ -158,7 +164,7 @@ pub fn enroll_cb(
     error: Option<libfprint_rs::GError>, 
     data: &Option<i32>,
 ) -> () {
-    println!("Enroll stage: {}", enroll_stage);
+    println!("Enroll_cb Enroll stage: {}", enroll_stage);
 }
 
 // pub fn match_cb(
