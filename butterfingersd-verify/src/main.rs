@@ -5,9 +5,9 @@ fn main() {
     let devices = context.devices();
 
     let dev = devices.get(0).unwrap();
-    dev.open_sync(None)?;
+    dev.open_sync(None).expect("Device could not be opened for verification");
 
     let enrolled_print = load_print_from_file();
 
-    let match_res = dev.verify_sync(enrolled_print, None, None, None::<()>, None)?;
+    let match_res = dev.verify_sync(enrolled_print, None, None, None::<()>, None).expect("Some error was encountered during verifying the fingerprint");
 }
