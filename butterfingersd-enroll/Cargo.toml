@@ -1,0 +1,16 @@
+[package]
+name = "butterfingersd-enroll"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+glib = "0.18.2"
+libfprint-rs = "0.2.1"
+sqlx = { version = "0.7.2", features = ["mysql"] }
+# butterfingersd-verify = "0.1.0" (uncomment in case the enroll depends on verify)
+
+[[bin]]
+name = "butterfingersd-enroll"
+path = "src/main.rs"

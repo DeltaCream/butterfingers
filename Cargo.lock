@@ -105,12 +105,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "butterfingers"
+name = "butterfingersd-enroll"
 version = "0.1.0"
 dependencies = [
  "glib",
  "libfprint-rs",
  "sqlx",
+]
+
+[[package]]
+name = "butterfingersd-verify"
+version = "0.1.0"
+dependencies = [
+ "glib",
+ "libfprint-rs",
 ]
 
 [[package]]

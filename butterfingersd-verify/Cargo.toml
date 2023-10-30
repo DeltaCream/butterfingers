@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 glib = "0.18.2"
 libfprint-rs = "0.2.1"
+# butterfingersd-enroll = "0.1.0" (uncomment in case the verify depends on enroll)
 
 [[bin]]
 name = "butterfingersd-verify"
