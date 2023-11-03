@@ -1,4 +1,4 @@
-use std::{sync::{Arc, Mutex}, io::{stdin, self}};
+use std::{sync::{Arc, Mutex}, io::{stdin, self, Write}, fs::File};
 
 use libfprint_rs::{FpContext, FpPrint, FpDevice, FpFinger};
 
@@ -30,12 +30,16 @@ fn main() {
 
     let counter = Arc::new(Mutex::new(0));
 
-    let _new_print = dev
+    let new_print = dev
         .enroll_sync(template, None, Some(progress_cb), Some(counter.clone()))
         .unwrap();
 
-    println!("new_print contents: {:#?}",_new_print);   //print the FpPrint struct
-    println!("new_print username: {:#?}",_new_print.username().unwrap());   //print the username of the FpPrint
+    println!("new_print contents: {:#?}",new_print);   //print the FpPrint struct
+    println!("new_print username: {:#?}",new_print.username().unwrap());   //print the username of the FpPrint
+
+    let mut file = File::create("/print/fprint.txt").unwrap();
+    //fingerprint serialized for storage
+    writeln!(&mut file, "{:#?}", new_print.serialize().expect("Could not serialize fingerprint")).expect("Error: Could not copy fingerprint to the txt file");
 
     println!("Total enroll stages: {}", counter.lock().unwrap());
 
