@@ -37,9 +37,15 @@ fn main() {
     println!("new_print contents: {:#?}",new_print);   //print the FpPrint struct
     println!("new_print username: {:#?}",new_print.username().unwrap());   //print the username of the FpPrint
 
-    let mut file = File::create("/print/fprint.txt").unwrap();
+    let mut file = File::create("/print/fprint.txt").expect("Creation of file failed");
     //fingerprint serialized for storage
-    writeln!(&mut file, "{:#?}", new_print.serialize().expect("Could not serialize fingerprint")).expect("Error: Could not copy fingerprint to the txt file");
+    file.write(&new_print.serialize().expect("Could not serialize fingerprint")).expect("Error: Could not store fingerprint to the txt file");
+    //type analysis: new_print.serialize() returns Result<Vec<u8>, Error>
+    //calling expect unwraps the Result and returns either a Vec<u8> or an Error
+    //assuming that it *does* return Vec<u8>
+    //we can do type coercion using & to first get a reference of Vec<u8>, which is &Vec<u8>
+    //then convert the &Vec<u8> into a &[u8] via the AsRef trait which is implemented out of the box
+    //writeln!(&mut file, "{:#?}", new_print.serialize().expect("Could not serialize fingerprint")).expect("Error: Could not copy fingerprint to the txt file");
 
     println!("Total enroll stages: {}", counter.lock().unwrap());
 
