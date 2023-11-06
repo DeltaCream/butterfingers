@@ -1,4 +1,4 @@
-use std::{sync::{Arc, Mutex}, io::{stdin, self, Write}, fs::File};
+use std::{sync::{Arc, Mutex}, io::{stdin, self, Write}, fs::{File, self}};
 
 use libfprint_rs::{FpContext, FpPrint, FpDevice, FpFinger};
 
@@ -37,7 +37,9 @@ fn main() {
     println!("new_print contents: {:#?}",new_print);   //print the FpPrint struct
     println!("new_print username: {:#?}",new_print.username().unwrap());   //print the username of the FpPrint
 
-    let mut file = File::create("/print/fprint.txt").expect("Creation of file failed");
+
+    fs::create_dir("print").expect("Should create a directory called print");
+    let mut file = File::create("print/fprint.txt").expect("Creation of file failed");
     //fingerprint serialized for storage
     file.write_all(&new_print.serialize().expect("Could not serialize fingerprint")).expect("Error: Could not store fingerprint to the txt file");
     //type analysis: new_print.serialize() returns Result<Vec<u8>, Error>
