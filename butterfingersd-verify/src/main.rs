@@ -9,7 +9,7 @@ fn main() {
     let dev = devices.get(0).unwrap();
     dev.open_sync(None).expect("Device could not be opened for verification");
 
-    let fpprint_file = File::open("/print/fprint.txt").expect("Could not read the fingerprint file");
+    let fpprint_file = File::open("print/fprint.txt").expect("Could not read the fingerprint file");
     let mut reader = BufReader::new(fpprint_file);
     let mut buffer = Vec::new();
 
