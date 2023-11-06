@@ -39,7 +39,7 @@ fn main() {
 
     let mut file = File::create("/print/fprint.txt").expect("Creation of file failed");
     //fingerprint serialized for storage
-    file.write(&new_print.serialize().expect("Could not serialize fingerprint")).expect("Error: Could not store fingerprint to the txt file");
+    file.write_all(&new_print.serialize().expect("Could not serialize fingerprint")).expect("Error: Could not store fingerprint to the txt file");
     //type analysis: new_print.serialize() returns Result<Vec<u8>, Error>
     //calling expect unwraps the Result and returns either a Vec<u8> or an Error
     //assuming that it *does* return Vec<u8>
