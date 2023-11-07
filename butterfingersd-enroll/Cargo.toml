@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 glib = "0.18.2"
-libfprint-rs = "0.2.1"
+libfprint-rs.workspace = true
 sqlx = { version = "0.7.2", features = ["mysql"] }
 # butterfingersd-verify = "0.1.0" (uncomment in case the enroll depends on verify)
 
