@@ -13,7 +13,7 @@ CREATE TABLE employee(
     mname varchar(50),
     lname varchar(50) NOT NULL,
     dob date NOT NULL,
-    doh boolean NOT NULL,
+    doh date NOT NULL,
     role_code SMALLINT UNSIGNED NOT NULL,
     tin_num INT UNSIGNED NOT NULL,
     image blob NOT NULL,
