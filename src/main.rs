@@ -1,4 +1,4 @@
-use std::result;
+use std::{env, path::Path, result};
 
 use sqlx::{
     //mysql::MySqlPool,
@@ -136,6 +136,29 @@ async fn do_test_connection() {
     }
 }
 
-fn main() {
-    task::block_on(do_test_connection());
+async fn add_employee(pool: &MySqlPool, image_link: &Path) -> Result<u64, Error> {
+    // let key = "DATABASE_URL";
+    // env::set_var(key, "mysql://root:pcb.2176310315865259@localhost:3306/employees");
+
+    //Insert employee, then obtain the ID of the row
+    let emp_id = sqlx::query!(
+        r#"
+INSERT INTO employee(emp_id, fname, mname, lname, dob, doh, role_code, tin_num, image)
+VALUES(1, "John", "Michael", "Doe", 2024-1-30. 2024-1-31, 2, 64, LOAD_FILE(?))
+        "# //idk what to put for the image column
+    )
+    .execute(pool)
+    .await?
+    .last_insert_id();
+
+    Ok(emp_id)
+}
+
+#[async_std::main]
+async fn main() -> anyhow::Result<()> {
+    //task::block_on(do_test_connection());
+    let pool = MySqlPool::connect(&env::var("DATABASE_URL")?).await?; //MySqlPool::connect("mysql://root:pcb.2176310315865259@localhost:3306/employees").await?;
+    let insert_emp = add_employee(&pool, &Path::new("random_pic")).await?;
+    println!("Added employee with id {insert_emp}");
+    Ok(())
 }
