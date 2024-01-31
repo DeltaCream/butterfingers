@@ -1,4 +1,4 @@
-use std::{fs::{File, self}, io::{BufRead, BufReader, Read}};
+use std::{fs::{self, File, OpenOptions}, io::{BufRead, BufReader, Read}};
 
 use libfprint_rs::{FpContext, FpPrint, FpDevice, FpFinger};
 
@@ -6,10 +6,10 @@ fn main() {
     let context = FpContext::new();
     let devices = context.devices();
 
-    let dev = devices.get(0).unwrap();
+    let dev = devices.first().unwrap();
     dev.open_sync(None).expect("Device could not be opened for verification");
 
-    let fpprint_file = File::open("print/fprint.txt").expect("Could not read the fingerprint file");
+    let fpprint_file = OpenOptions::new().read(true).open("print/fprint").expect("Could not read the fingerprint file"); //changed from File::open to OpenOptions::open
     let mut reader = BufReader::new(fpprint_file);
     let mut buffer = Vec::new();
 

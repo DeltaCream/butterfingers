@@ -1,4 +1,4 @@
-use std::{sync::{Arc, Mutex}, io::{stdin, self, Write}, fs::{File, self}};
+use std::{sync::{Arc, Mutex}, io::{stdin, self, Write}, fs::{self, File, OpenOptions}};
 
 use libfprint_rs::{FpContext, FpPrint, FpDevice, FpFinger};
 
@@ -14,7 +14,7 @@ fn main() {
 
     let devices = context.devices();
 
-    let dev = devices.get(0).expect("Devices could not be retrieved");
+    let dev = devices.first().expect("Devices could not be retrieved");
 
     println!("{:#?}", dev.scan_type()); //print the scan type of the device
     println!("{:#?}", dev.features());  //print the features of the device
@@ -39,7 +39,7 @@ fn main() {
 
 
     fs::create_dir("print").expect("Should create a directory called print");
-    let mut file = File::create("print/fprint.txt").expect("Creation of file failed");
+    let mut file = OpenOptions::new().write(true).create(true).open("print/fprint").expect("Creation of file failed"); //changed from File::create to OpenOptions::create
     //fingerprint serialized for storage
     file.write_all(&new_print.serialize().expect("Could not serialize fingerprint")).expect("Error: Could not store fingerprint to the txt file");
     //type analysis: new_print.serialize() returns Result<Vec<u8>, Error>
@@ -161,7 +161,7 @@ pub fn progress_cb(
     _print: Option<FpPrint>,
     _error: Option<glib::Error>,
     data: &Option<Arc<Mutex<i32>>>,
-) -> () {
+) {
     if let Some(data) = data {
         let mut d = data.lock().unwrap();
         *d += 1;
@@ -175,7 +175,7 @@ pub fn enroll_cb(
     print: Option<FpPrint>, 
     error: Option<libfprint_rs::GError>, 
     data: &Option<i32>,
-) -> () {
+) {
     println!("Enroll_cb Enroll stage: {}", enroll_stage);
 }
 
