@@ -18,7 +18,7 @@ CREATE TABLE employee(
     doh date NOT NULL,
     role_code SMALLINT UNSIGNED NOT NULL,
     tin_num INT UNSIGNED NOT NULL,
-    image blob NOT NULL,
+    image blob,
     PRIMARY KEY(emp_id),
     foreign key(role_code) references employee_role(role_code)
 );

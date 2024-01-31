@@ -1,5 +1,22 @@
 {
     "rust-analyzer.linkedProjects": [
         "./butterfingersd-verify/Cargo.toml"
+    ],
+    "sqltools.connections": [
+        {
+            "mysqlOptions": {
+                "authProtocol": "default",
+                "enableSsl": "Disabled"
+            },
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 3306,
+            "driver": "MySQL",
+            "name": "mysql",
+            "database": "pyfi_db",
+            "username": "root",
+            "password": "root",
+            "askForPassword": true,
+        }
     ]
 }

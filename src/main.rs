@@ -1,5 +1,6 @@
 use std::{env, path::Path, result};
 
+use dotenvy::dotenv;
 use sqlx::{
     //mysql::MySqlPool,
     Pool,
@@ -81,8 +82,8 @@ struct Management {
 #[derive(FromRow, Debug, Clone)]
 struct UserAccount {
     emp_id: u64,
-    username: String,
-    password: String,
+    username: String, //unique
+    user_password: String,
 }
 
 #[derive(FromRow, Debug, Clone)]
@@ -119,7 +120,7 @@ struct AttendanceRecord {
 }
 
 async fn connect() -> Result<Pool<MySql>, Error> {
-    return MySqlPool::connect("mysql://root:pcb.2176310315865259@localhost:3306/employees").await; //insert url here
+    return MySqlPool::connect("mysql://root:root@localhost:3306/pyfi_db").await; //insert url here
 }
 
 async fn do_test_connection() {
@@ -138,15 +139,15 @@ async fn do_test_connection() {
 
 async fn add_employee(pool: &MySqlPool, image_link: &Path) -> Result<u64, Error> {
     // let key = "DATABASE_URL";
-    // env::set_var(key, "mysql://root:pcb.2176310315865259@localhost:3306/employees");
+    // env::set_var(key, "mysql://root:root@localhost:3306/pyfi_db");
 
     //Insert employee, then obtain the ID of the row
-    let emp_id = sqlx::query!(
+    let emp_id = sqlx::query!( //use query_as! later on
         r#"
 INSERT INTO employee(emp_id, fname, mname, lname, dob, doh, role_code, tin_num, image)
-VALUES(1, "John", "Michael", "Doe", 2024-1-30. 2024-1-31, 2, 64, LOAD_FILE(?))
+VALUES(1, "John", "Michael", "Doe", "2024-01-30", "2024-01-31", 2, 64, NULL)
         "# //idk what to put for the image column
-    )
+    ,)
     .execute(pool)
     .await?
     .last_insert_id();
@@ -157,8 +158,9 @@ VALUES(1, "John", "Michael", "Doe", 2024-1-30. 2024-1-31, 2, 64, LOAD_FILE(?))
 #[async_std::main]
 async fn main() -> anyhow::Result<()> {
     //task::block_on(do_test_connection());
-    let pool = MySqlPool::connect(&env::var("DATABASE_URL")?).await?; //MySqlPool::connect("mysql://root:pcb.2176310315865259@localhost:3306/employees").await?;
-    let insert_emp = add_employee(&pool, &Path::new("random_pic")).await?;
+    dotenvy::dotenv()?;
+    let pool = MySqlPool::connect(&env::var("DATABASE_URL")?).await?; //MySqlPool::connect("mysql://root:root@localhost:3306/pyfi_db").await?;
+    let insert_emp = add_employee(&pool, Path::new("random_pic")).await?;
     println!("Added employee with id {insert_emp}");
     Ok(())
 }
