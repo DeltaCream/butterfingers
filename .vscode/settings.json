@@ -9,7 +9,7 @@
                 "enableSsl": "Disabled"
             },
             "previewLimit": 50,
-            "server": "localhost",
+            "server": "10.18.2.205", //"localhost",
             "port": 3306,
             "driver": "MySQL",
             "name": "mysql",
