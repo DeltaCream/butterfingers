@@ -6,6 +6,8 @@ CREATE TABLE employee_role(
     role_name varchar(125) NOT NULL,
     PRIMARY KEY(role_code)
 );
+INSERT INTO employee_role VALUES(1,'Management');
+INSERT INTO employee_role VALUES(2,'Production/Office Staff');
 
 CREATE TABLE employee(
 	emp_id BIGINT UNSIGNED NOT NULL,
@@ -42,6 +44,8 @@ CREATE TABLE managerial_positions(
 	position_name VARCHAR(125) NOT NULL,
     PRIMARY KEY(managerial_position_code)
 );
+INSERT INTO managerial_positions VALUES(1, 'General Manager');
+INSERT INTO managerial_positions VALUES(2, 'Human Resources');
 
 CREATE TABLE management(
 	emp_id BIGINT UNSIGNED NOT NULL,
@@ -54,7 +58,7 @@ CREATE TABLE management(
 CREATE TABLE user_accounts(
 	emp_id BIGINT UNSIGNED NOT NULL,
     username varchar(255) UNIQUE NOT NULL,
-    password varchar(255) UNIQUE NOT NULL,
+    user_password varchar(255) NOT NULL,
     PRIMARY KEY(emp_id),
     foreign key(emp_id) references management(emp_id)
 );
@@ -85,6 +89,10 @@ CREATE TABLE attendance_status(
     attendance_status_meaning VARCHAR(15) NOT NULL,
     PRIMARY KEY(attendance_status_code)
 );
+INSERT INTO attendance_status VALUES(1, 'Entry');
+INSERT INTO attendance_status VALUES(2, 'Exit');
+INSERT INTO attendance_status VALUES(3, 'Absent');
+INSERT INTO attendance_status VALUES(4, 'On Leave');
 
 CREATE TABLE attendance_records(
 	emp_id BIGINT UNSIGNED NOT NULL,
@@ -95,6 +103,25 @@ CREATE TABLE attendance_records(
     foreign key(emp_id) references production_staff(emp_id),
     foreign key(attendance_status_code) references attendance_status(attendance_status_code)
 );
+DELIMITER //
+Create Procedure add_emp_role(IN empid BIGINT UNSIGNED, IN emp_position SMALLINT UNSIGNED)
+	Begin
+		if((select role_code from employee WHERE emp_id = empid) = 1) then
+			INSERT INTO management VALUES(empid, emp_position);
+        elseif ((select role_code from employee WHERE emp_id = empid) = 2) then
+			INSERT INTO production_staff VALUES(empid, emp_position);
+		end if;
+    End
+DELIMITER ;
+
+DELIMITER //
+Create Procedure add_mng_user_acc(IN empid BIGINT UNSIGNED, IN uname varchar(255),  IN pwd varchar(255))
+	Begin
+		INSERT INTO user_accounts VALUES (empid, uname, pwd);
+    End
+DELIMITER ;
+
+
 
 
 
