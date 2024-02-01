@@ -12,3 +12,6 @@ Cargo.lock
 
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
+
+# Environment configuration files which will inevitably differ between development environments (namely, the host Windows system, and the emulated Ubuntu system)
+.env
