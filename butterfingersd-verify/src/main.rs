@@ -1,12 +1,13 @@
-use std::{fs::{self, File, OpenOptions}, io::{BufRead, BufReader, Read}};
+use std::{fs::OpenOptions, io::{BufReader, Read}};
 
-use libfprint_rs::{FpContext, FpPrint, FpDevice, FpFinger};
+use libfprint_rs::{FpContext, FpPrint};
 
 fn main() {
     let context = FpContext::new();
     let devices = context.devices();
 
     let dev = devices.first().unwrap();
+    println!("Device name is {}", dev.name());
     dev.open_sync(None).expect("Device could not be opened for verification");
 
     let fpprint_file = OpenOptions::new().read(true).open("print/fprint").expect("Could not read the fingerprint file"); //changed from File::open to OpenOptions::open

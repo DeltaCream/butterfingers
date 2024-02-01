@@ -1,4 +1,4 @@
-use std::{sync::{Arc, Mutex}, io::{stdin, self, Write}, fs::{self, File, OpenOptions}};
+use std::{sync::{Arc, Mutex}, io::Write, fs::{self, OpenOptions}};
 
 use libfprint_rs::{FpContext, FpPrint, FpDevice, FpFinger};
 
