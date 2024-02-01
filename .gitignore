@@ -14,4 +14,7 @@ Cargo.lock
 *.pdb
 
 # Environment configuration files which will inevitably differ between development environments (namely, the host Windows system, and the emulated Ubuntu system)
-.env
+*.env
+
+# Visual Studio Code settings configuration via settings.json, for the same reasons as above (on *.env)
+.vscode/
