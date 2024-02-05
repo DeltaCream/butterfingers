@@ -150,6 +150,17 @@ VALUES(1, "John", "Michael", "Doe", "2024-01-30", "2024-01-31", 2, 64, NULL)
     Ok(emp_id)
 }
 
+async fn select(query: &str) -> anyhow::Result<()> {
+    dotenvy::dotenv()?;
+    let pool = MySqlPool::connect(&env::var("DATABASE_URL")?).await?; 
+    let query = sqlx::query!(query)
+    .fetch_all(pool)
+    .await?;
+
+    pool.close();
+    query
+}
+
 #[async_std::main]
 async fn main() -> anyhow::Result<()> {
     //task::block_on(do_test_connection());

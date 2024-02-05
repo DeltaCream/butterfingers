@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-glib = "0.18.2"
+glib = "0.19.0"
 libfprint-rs.workspace = true
 # serde = "*.0.0"
 # butterfingersd-enroll = "0.1.0" (uncomment in case the verify depends on enroll)
