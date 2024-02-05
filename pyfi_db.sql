@@ -133,7 +133,21 @@ Begin
 End
 DELIMITER ;
 
-
-
-
-
+DELIMITER //
+Create Procedure record_attendance(IN uuid varchar(36))
+	Begin
+		IF(EXISTS(SELECT emp_id, fprint_uuid from enrolled_fingerprints where fprint_uuid = uuid)) then
+		    SET @emp_id = (SELECT emp_id from enrolled_fingerprints where fprint_uuid = uuid);
+			SET @last_attendance_code = (SELECT attendance_status_code from attendance_records where emp_id = @emp_id and attendance_date = DATE(NOW()) ORDER BY attendance_date DESC LIMIT 1);
+            IF(@last_attendance_code = 2) then
+				insert into attendance_records VALUES(@emp_id, DATE(NOW()), TIME(NOW()), 1);
+			elseif(@last_attendance_code = 1) then
+				insert into attendance_records VALUES(@emp_id, DATE(NOW()), TIME(NOW()), 2);
+			else
+				insert into attendance_records VALUES(@emp_id, DATE(NOW()), TIME(NOW()), 1);
+			end if;
+		else 
+			SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'No such fingerprint is enrolled in the Database';
+        end if;
+    End
+DELIMITER ;
