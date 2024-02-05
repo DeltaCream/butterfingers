@@ -121,6 +121,17 @@ Create Procedure add_mng_user_acc(IN empid BIGINT UNSIGNED, IN uname varchar(255
     End
 DELIMITER ;
 
+Create Procedure enumerate_unenrolled_employees()
+Begin
+	select production_staff.emp_id As "Employee ID", employee.fname As "First Name",employee.lname As "Last Name" from production_staff join employee using(emp_id) where production_staff.emp_id not in (select emp_id from enrolled_fingerprints);
+End
+DELIMITER ; 
+
+Create Procedure save_fprint_identifier(IN empid BIGINT UNSIGNED, IN fprint_id varchar(36))
+Begin
+
+End
+DELIMITER ;
 
 
 
