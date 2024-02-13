@@ -1,9 +1,76 @@
-use std::{sync::{Arc, Mutex}, io::Write, fs::{self, OpenOptions}};
+use std::{env, fs::{self, OpenOptions}, io::Write, sync::{Arc, Mutex}};
 
 use libfprint_rs::{FpContext, FpPrint, FpDevice, FpFinger};
 
+use sqlx::MySqlPool;
 
-fn main() {
+async fn list_employees() -> anyhow::Result<()> { //list employees which are candidates for enrollment
+    dotenvy::dotenv()?;
+    let pool = MySqlPool::connect(&env::var("DATABASE_URL")?).await?; 
+    let result = sqlx::query!("SELECT * FROM production_staff join employee using(emp_id) where production_staff.emp_id not in (select emp_id from enrolled_fingerprints)")
+    .fetch_all(&pool)
+    .await?;
+
+    pool.close().await;
+    
+    Ok(())
+}
+
+async fn enroll_employees() -> anyhow::Result<()> {
+    Ok(())
+}
+
+// async fn select(query: &str) -> anyhow::Result<()> {
+    
+// }
+
+async fn attendance() -> anyhow::Result<()> {
+    dotenvy::dotenv()?;
+    let pool = MySqlPool::connect(&env::var("DATABASE_URL")?).await?;
+    
+    let context = FpContext::new();
+    let devices = context.devices();
+    let fp_scanner = devices.first().expect("Devices could not be retrieved");
+
+    println!("{:#?}", fp_scanner.scan_type()); //print the scan type of the device
+    println!("{:#?}", fp_scanner.features());  //print the features of the device
+
+    fp_scanner.open_sync(None).expect("Device could not be opened");
+
+    let template = FpPrint::new(fp_scanner);
+    template.set_finger(FpFinger::RightIndex);
+    template.set_username("tbd"); //will input later
+
+    println!("Username of the fingerprint: {}", template.username().expect("Username should be included here"));
+
+    let counter = Arc::new(Mutex::new(0));
+
+    let new_fprint = fp_scanner
+        .enroll_sync(template, None, Some(enroll_cb), None)
+        .unwrap();
+
+    println!("new_print contents: {:#?}",new_fprint);   //print the FpPrint struct
+    println!("new_print username: {:#?}",new_fprint.username().unwrap());   //print the username of the FpPrint
+
+    fp_scanner.close_sync(None).expect("Device could not be closed");
+    println!("Total enroll stages: {}", counter.lock().unwrap());
+
+    let attendance = sqlx::query!( //use query_as! later on //call prepared statement
+        r#"
+        insert into attendance_records VALUES(@emp_id, DATE(NOW()), TIME(NOW()), 1)
+        "#
+    ,)
+    .execute(&pool)
+    .await?
+    .last_insert_id();
+    
+    Ok(())
+}
+
+#[async_std::main]
+async fn main() {
+
+    attendance().await.unwrap();
 
     // println!("For whom will you scan the fingerprint?");
 
@@ -31,7 +98,7 @@ fn main() {
     let counter = Arc::new(Mutex::new(0));
 
     let new_print = dev
-        .enroll_sync(template, None, Some(progress_cb), Some(counter.clone()))
+        .enroll_sync(template, None, None, Some(counter.clone())) //Some(progress_cb)
         .unwrap();
 
     println!("new_print contents: {:#?}",new_print);   //print the FpPrint struct
@@ -140,8 +207,8 @@ fn main() {
     //
 
     //Hello world for sanity check
-    println!("Hello, world!");
-    println!("Hello World");
+    // println!("Hello, world!");
+    // println!("Hello World");
 
     // //Verifying a fingerprint
     // let context = FpContext::new();

@@ -12,5 +12,5 @@ libfprint-rs.workspace = true
 # butterfingersd-enroll = "0.1.0" (uncomment in case the verify depends on enroll)
 
 [[bin]]
-name = "butterfingersd-verify"
+name = "verify"
 path = "src/main.rs"

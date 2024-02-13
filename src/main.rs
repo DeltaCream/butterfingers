@@ -153,13 +153,15 @@ VALUES(1, "John", "Michael", "Doe", "2024-01-30", "2024-01-31", 2, 64, NULL)
 async fn select(query: &str) -> anyhow::Result<()> {
     dotenvy::dotenv()?;
     let pool = MySqlPool::connect(&env::var("DATABASE_URL")?).await?; 
-    let query = sqlx::query!(query)
-    .fetch_all(pool)
+    let result = sqlx::query!("SELECT * FROM production_staff join employee using(emp_id) where production_staff.emp_id not in (select emp_id from enrolled_fingerprints)")
+    .fetch_all(&pool)
     .await?;
 
-    pool.close();
-    query
+    pool.close().await;
+    Ok(())
 }
+
+//"INSERT INTO enrolled_fingerprints VALUES(emp_id, fprint_uuid)" <- some query I have to put later
 
 #[async_std::main]
 async fn main() -> anyhow::Result<()> {

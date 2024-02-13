@@ -8,8 +8,12 @@ edition = "2021"
 [dependencies]
 glib = "0.19.0"
 libfprint-rs.workspace = true
+sqlx.workspace = true
+dotenvy.workspace = true
+anyhow.workspace = true
+async-std.workspace = true
 # butterfingersd-verify = "0.1.0" (uncomment in case the enroll depends on verify)
 
 [[bin]]
-name = "butterfingersd-enroll"
+name = "enroll"
 path = "src/main.rs"
