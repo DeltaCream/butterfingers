@@ -129,7 +129,7 @@ DELIMITER ;
 
 Create Procedure save_fprint_identifier(IN empid BIGINT UNSIGNED, IN fprint_id varchar(36))
 Begin
-
+	insert into enrolled_fingerprints values (empid, fprint_id); 
 End
 DELIMITER ;
 
