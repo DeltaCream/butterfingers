@@ -1,20 +1,99 @@
-use std::{env, fs::{self, OpenOptions}, io::Write, sync::{Arc, Mutex}};
+use std::{env, fs::{self, OpenOptions}, io::{self, Write}, num::IntErrorKind, sync::{Arc, Mutex}};
 
 use libfprint_rs::{FpContext, FpPrint, FpDevice, FpFinger};
 
-use sqlx::MySqlPool;
+use sqlx::{MySqlPool, Row};
+use uuid::Uuid;
 
-async fn list_employees() -> anyhow::Result<()> { //list employees which are candidates for enrollment
+use prettytable::{Table, Cell};
+
+async fn enroll_employee() -> Result<(), sqlx::Error> { //anyhow::Result<()> { //list employees which are candidates for enrollment
     dotenvy::dotenv()?;
     let pool = MySqlPool::connect(&env::var("DATABASE_URL")?).await?; 
-    let result = sqlx::query!("SELECT * FROM production_staff join employee using(emp_id) where production_staff.emp_id not in (select emp_id from enrolled_fingerprints)")
-    .fetch_all(&pool)
-    .await?;
+    let result = sqlx::query!("CALL enumerate_unenrolled_employees").fetch_all(&pool).await?;
+    //sqlx::query!("select production_staff.emp_id As "Employee ID", employee.fname As "First Name",employee.lname As "Last Name" from production_staff join employee using(emp_id) where production_staff.emp_id not in (select emp_id from enrolled_fingerprints)") //backup query
+    
+    //transfer query contents to a vector (already done by line 11)
+
+    // Display the rows in a table format
+    let mut table = Table::new();
+    // Add table headers
+    table.add_row(prettytable::Row::new(vec![
+        Cell::new("Employee ID"),
+        Cell::new("First Name"),
+        Cell::new("Last Name"),
+        // ... add more headers as needed
+    ]));
+    // Add row data to the table
+    for row in &result {
+        let emp_id: u64 = row.get("emp_id"); //bigint unsigned
+        let fname: String = row.get("fname"); //varchar
+        let lname: String = row.get("lname"); //varchar
+        table.add_row(prettytable::Row::new(vec![
+            Cell::new(&emp_id.to_string()),
+            Cell::new(&fname.to_string()),
+            Cell::new(&lname.to_string()),
+            // ... add more cells with row data as needed
+        ]));
+    }
+    // Print the table to the command line
+    table.printstd();
+
+    println!("Select row of employee from 0-n whose fingerprint will be enrolled: "); //take input
+    let mut line = String::new();
+    let row_num: usize;
+    loop {
+        io::stdin().read_line(&mut line).expect("Input should be read here");
+        // if let Err(e) = line.trim().parse::<i32>() {
+        //     match e.kind() {
+        //         IntErrorKind::Empty => {
+        //             println!("Exiting...");
+        //             break;
+        //         }
+        //         IntErrorKind::InvalidDigit => {
+        //             println!("Invalid digit, try again")
+        //         }
+        //         error => {
+        //             panic!("Unexpected error {error:?}")
+        //         }
+        //     }
+        // }
+        
+        if let Ok(num) = line.trim().parse::<i32>() {
+            match num {
+                ..=-1 => {
+                    println!("Negative numbers not allowed, try again");
+                },
+                _ => {
+                    row_num = num as usize;
+                    break;
+                },
+            }
+        }
+        line.clear()
+    }
+
+    //retrieve result set
+    let row_queried = &result.get(row_num)
+        .expect("A row should be present here");
+
+    let uuid = Uuid::new_v4(); //generates a random uuid
+
+    //enroll fingerprint
+
+    let emp_id: u64 = row_queried.get("emp_id");
+
+    let insert = sqlx::query!("CALL save_fprint_identifier(?,?)",emp_id, uuid)
+        .execute(&pool)
+        .await?;
 
     pool.close().await;
     
     Ok(())
 }
+
+//enroll employee
+//enroll production
 
 async fn enroll_employees() -> anyhow::Result<()> {
     Ok(())
@@ -55,11 +134,13 @@ async fn attendance() -> anyhow::Result<()> {
     fp_scanner.close_sync(None).expect("Device could not be closed");
     println!("Total enroll stages: {}", counter.lock().unwrap());
 
+    //generate uuid
+    let uuid = "Hello UUID";
+
+
     let attendance = sqlx::query!( //use query_as! later on //call prepared statement
-        r#"
-        insert into attendance_records VALUES(@emp_id, DATE(NOW()), TIME(NOW()), 1)
-        "#
-    ,)
+        r#"CALL record_attendance(?)"# //input uuid inside the record_attendance
+    ,uuid)
     .execute(&pool)
     .await?
     .last_insert_id();
