@@ -163,7 +163,7 @@ async fn select(query: &str) -> anyhow::Result<()> {
 
 //"INSERT INTO enrolled_fingerprints VALUES(emp_id, fprint_uuid)" <- some query I have to put later
 
-#[async_std::main]
+#[tokio::main]
 async fn main() -> anyhow::Result<()> {
     //task::block_on(do_test_connection());
     dotenvy::dotenv()?;
