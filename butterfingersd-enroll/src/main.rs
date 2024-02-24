@@ -17,13 +17,13 @@ async fn enroll_employee() -> anyhow::Result<()> { //list employees which are ca
     //sqlx::query!("select production_staff.emp_id As "Employee ID", employee.fname As "First Name",employee.lname As "Last Name" from production_staff join employee using(emp_id) where production_staff.emp_id not in (select emp_id from enrolled_fingerprints)") //backup query
     
     //transfer query contents to a vector (already done by line 11)
-    println!("Query has been completed");
-    for row in &result {
-        let columns = row.columns();
-        for col in columns {
-            println!("Column name: {}", col.name());
-        }
-    }
+    // println!("Query has been completed");
+    // for row in &result {
+    //     let columns = row.columns();
+    //     for col in columns {
+    //         println!("Column name: {}", col.name());
+    //     }
+    // }
 
     // Display the rows in a table format
     let mut table = Table::new();
@@ -101,8 +101,8 @@ async fn enroll_employee() -> anyhow::Result<()> { //list employees which are ca
     let devices = context.devices();
     let fp_scanner = devices.first().expect("Devices could not be retrieved");
 
-    println!("{:#?}", fp_scanner.scan_type()); //print the scan type of the device
-    println!("{:#?}", fp_scanner.features());  //print the features of the device
+    // println!("{:#?}", fp_scanner.scan_type()); //print the scan type of the device
+    // println!("{:#?}", fp_scanner.features());  //print the features of the device
 
     fp_scanner.open_sync(None).expect("Device could not be opened");
 
@@ -127,7 +127,7 @@ async fn enroll_employee() -> anyhow::Result<()> { //list employees which are ca
     println!("Total enroll stages: {}", counter.lock().unwrap());
 
     //fs::create_dir("print").expect("Should create a directory called print");
-    let mut file = OpenOptions::new().write(true).create(true).open(format!("print/fprint_{uuid}")).expect("Creation of file failed");//PathBuf::from("print/").join(format!("fprint_{uuid}")); //changed from File::create to OpenOptions::create
+    let mut file = OpenOptions::new().write(true).create(true).open(format!("print/fprint_{}",uuid.to_string())).expect("Creation of file failed");//PathBuf::from("print/").join(format!("fprint_{uuid}")); //changed from File::create to OpenOptions::create
     //fingerprint serialized for storage
     //println!("Path: {}", file.display());
     file.write_all(&new_fprint.serialize().expect("Could not serialize fingerprint")).expect("Error: Could not store fingerprint to the txt file");

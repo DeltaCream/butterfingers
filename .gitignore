@@ -24,3 +24,6 @@ Cargo.lock
 
 #pyfi_db.sql
 pyfi_db.sql
+
+#any further sql files are ignored
+*.sql
