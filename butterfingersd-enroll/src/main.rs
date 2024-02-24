@@ -10,7 +10,9 @@ use prettytable::{Table, Cell};
 async fn enroll_employee() -> Result<(), sqlx::Error> { //anyhow::Result<()> { //list employees which are candidates for enrollment
     dotenvy::dotenv()?;
     let pool = MySqlPool::connect(&env::var("DATABASE_URL")?).await?; 
-    let result = sqlx::query!("CALL enumerate_unenrolled_employees").fetch_all(&pool).await?;
+    let result = sqlx::query!("CALL enumerate_unenrolled_employees")
+        .fetch_all(&pool)
+        .await?;
     //sqlx::query!("select production_staff.emp_id As "Employee ID", employee.fname As "First Name",employee.lname As "Last Name" from production_staff join employee using(emp_id) where production_staff.emp_id not in (select emp_id from enrolled_fingerprints)") //backup query
     
     //transfer query contents to a vector (already done by line 11)
@@ -26,9 +28,9 @@ async fn enroll_employee() -> Result<(), sqlx::Error> { //anyhow::Result<()> { /
     ]));
     // Add row data to the table
     for row in &result {
-        let emp_id: u64 = row.get("emp_id"); //bigint unsigned
-        let fname: String = row.get("fname"); //varchar
-        let lname: String = row.get("lname"); //varchar
+        let emp_id: u64 = row.get("Employee ID"); //bigint unsigned
+        let fname: String = row.get("First Name"); //varchar
+        let lname: String = row.get("Last Name"); //varchar
         table.add_row(prettytable::Row::new(vec![
             Cell::new(&emp_id.to_string()),
             Cell::new(&fname.to_string()),
@@ -41,7 +43,7 @@ async fn enroll_employee() -> Result<(), sqlx::Error> { //anyhow::Result<()> { /
 
     println!("Select row of employee from 0-n whose fingerprint will be enrolled: "); //take input
     let mut line = String::new();
-    let row_num: usize;
+    let mut row_queried;
     loop {
         io::stdin().read_line(&mut line).expect("Input should be read here");
         // if let Err(e) = line.trim().parse::<i32>() {
@@ -59,23 +61,25 @@ async fn enroll_employee() -> Result<(), sqlx::Error> { //anyhow::Result<()> { /
         //     }
         // }
         
-        if let Ok(num) = line.trim().parse::<i32>() {
+        if let Ok(num) = line.trim().parse::<usize>() {
             match num {
-                ..=-1 => {
-                    println!("Negative numbers not allowed, try again");
-                },
-                _ => {
-                    row_num = num as usize;
-                    break;
+                row_num => {
+                    if let Some(result) = &result.get(row_num) {
+                        row_queried = result;
+                        break;
+                    } else { //get returns None if the row does not exist
+                        println!("Row number {row_num} does not exist in the table, please try again");
+                    }
                 },
             }
+        } else { //parse returns an error, will not allow negative numbers (as negative rows do not exist in the table)
+            println!("Invalid input, please try again");
         }
         line.clear()
     }
 
-    //retrieve result set
-    let row_queried = &result.get(row_num)
-        .expect("A row should be present here");
+    //retrieve result set (already done by line 68)
+    
 
     let uuid = Uuid::new_v4(); //generates a random uuid
 

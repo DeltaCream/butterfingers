@@ -21,3 +21,6 @@ Cargo.lock
 
 # MySql session files
 *.session.sql
+
+#pyfi_db.sql
+pyfi_db.sql
