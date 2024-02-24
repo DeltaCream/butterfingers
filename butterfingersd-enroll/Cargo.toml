@@ -22,5 +22,5 @@ prettytable = "0.10.0"
 # butterfingersd-verify = "0.1.0" (uncomment in case the enroll depends on verify)
 
 [[bin]]
-name = "enroll"
+name = "butterfingersd-enroll"
 path = "src/main.rs"

@@ -20,12 +20,12 @@ name = "butterfingers"
 version = "0.1.0"
 edition = "2021"
 
-[dependencies]
-#async-std = { version = "1.12.0", features = ["attributes"] } # "attributes" to allow main function to be ran in async
-dotenvy = "0.15.7"
-anyhow = "1.0.79"
-sqlx = { version = "0.7.2", features = ["runtime-async-std", "mysql", "macros", "time", "uuid"] }
-tokio = { version = "1.36.0", features = ["full"] }
+# [dependencies]
+# async-std = { version = "1.12.0", features = ["attributes"] } # "attributes" to allow main function to be ran in async
+# dotenvy = "0.15.7"
+# anyhow = "1.0.79"
+# sqlx = { version = "0.7.2", features = ["runtime-async-std", "mysql", "macros", "time", "uuid"] }
+# tokio = { version = "1.36.0", features = ["full"] }
 
 #[[bin]]
 #name = "enroll"
