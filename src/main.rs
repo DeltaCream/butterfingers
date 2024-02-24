@@ -1,10 +1,6 @@
-use std::{env, path::Path};
 
-use sqlx::{
-    //mysql::MySqlPool,
-    Error,
-    MySqlPool
-};
+
+
 
 // #[derive(FromRow, Debug, Clone)] old unused struct
 // struct Person {
