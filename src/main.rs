@@ -126,47 +126,48 @@
 //     }
 // }
 
-// async fn add_employee(pool: &MySqlPool, _image_link: &Path) -> Result<u64, Error> {
-//     // let key = "DATABASE_URL";
-//     // env::set_var(key, "mysql://root:root@localhost:3306/pyfi_db");
+// // async fn add_employee(pool: &MySqlPool, _image_link: &Path) -> Result<u64, Error> {
+// //     // let key = "DATABASE_URL";
+// //     // env::set_var(key, "mysql://root:root@localhost:3306/pyfi_db");
 
-//     //Insert employee, then obtain the ID of the row
-//     let emp_id = sqlx::query!( //use query_as! later on
-//         r#"
-// INSERT INTO employee(emp_id, fname, mname, lname, dob, doh, role_code, tin_num, image)
-// VALUES(1, "John", "Michael", "Doe", "2024-01-30", "2024-01-31", 2, 64, NULL)
-//         "# //idk what to put for the image column
-//     ,)
-//     .execute(pool)
-//     .await?
-//     .last_insert_id();
+// //     //Insert employee, then obtain the ID of the row
+// //     let emp_id = sqlx::query!( //use query_as! later on
+// //         r#"
+// // INSERT INTO employee(emp_id, fname, mname, lname, dob, doh, role_code, tin_num, image)
+// // VALUES(1, "John", "Michael", "Doe", "2024-01-30", "2024-01-31", 2, 64, NULL)
+// //         "# //idk what to put for the image column
+// //     ,)
+// //     .execute(pool)
+// //     .await?
+// //     .last_insert_id();
 
-//     Ok(emp_id)
-// }
+// //     Ok(emp_id)
+// // }
 
-// async fn select(_query: &str) -> anyhow::Result<()> {
-//     dotenvy::dotenv()?;
-//     let pool = MySqlPool::connect(&env::var("DATABASE_URL")?).await?; 
-//     let _result = sqlx::query!("SELECT * FROM production_staff join employee using(emp_id) where production_staff.emp_id not in (select emp_id from enrolled_fingerprints)")
-//     .fetch_all(&pool)
-//     .await?;
+// // async fn select(_query: &str) -> anyhow::Result<()> {
+// //     dotenvy::dotenv()?;
+// //     let pool = MySqlPool::connect(&env::var("DATABASE_URL")?).await?; 
+// //     let _result = sqlx::query!("SELECT * FROM production_staff join employee using(emp_id) where production_staff.emp_id not in (select emp_id from enrolled_fingerprints)")
+// //     .fetch_all(&pool)
+// //     .await?;
 
-//     pool.close().await;
-//     Ok(())
-// }
+// //     pool.close().await;
+// //     Ok(())
+// // }
 
 //"INSERT INTO enrolled_fingerprints VALUES(emp_id, fprint_uuid)" <- some query I have to put later
 
-// #[tokio::main]
-// async fn main() -> anyhow::Result<()> {
-//     //task::block_on(do_test_connection());
-//     dotenvy::dotenv()?;
-//     let pool = MySqlPool::connect(&env::var("DATABASE_URL")?).await?; //MySqlPool::connect("mysql://root:root@localhost:3306/pyfi_db").await?;
-//     let insert_emp = add_employee(&pool, Path::new("random_pic")).await?;
-//     println!("Added employee with id {insert_emp}");
-//     Ok(())
+// // #[tokio::main]
+// // async fn main() -> anyhow::Result<()> {
+// //     //task::block_on(do_test_connection());
+// //     dotenvy::dotenv()?;
+// //     let pool = MySqlPool::connect(&env::var("DATABASE_URL")?).await?; //MySqlPool::connect("mysql://root:root@localhost:3306/pyfi_db").await?;
+// //     let insert_emp = add_employee(&pool, Path::new("random_pic")).await?;
+// //     println!("Added employee with id {insert_emp}");
+// //     Ok(())
+// }
 // }
 
 fn main() {
-    
+    println!("Hello, world!"); //Does nothing
 }

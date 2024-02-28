@@ -1,4 +1,10 @@
-use std::{env, fs::{self, OpenOptions}, io::{self, Write}, num::IntErrorKind, sync::{Arc, Mutex}, path::PathBuf};
+use std::{
+    env, 
+    fs::{OpenOptions, File},
+    io::{self, Write}, 
+    sync::{Arc, Mutex},
+    path::{Path, PathBuf},
+};
 
 use libfprint_rs::{FpContext, FpPrint, FpDevice, FpFinger};
 
@@ -6,7 +12,7 @@ use sqlx::{MySqlPool, Row, Column};
 use uuid::Uuid;
 
 use prettytable::{Table, Cell};
-use tokio;
+
 
 async fn enroll_employee() -> anyhow::Result<()> { //list employees which are candidates for enrollment
     dotenvy::dotenv()?;
@@ -24,6 +30,12 @@ async fn enroll_employee() -> anyhow::Result<()> { //list employees which are ca
     //         println!("Column name: {}", col.name());
     //     }
     // }
+    println!("{} rows found", result.len());
+
+    if result.is_empty() {
+        println!("No unenrolled employees found");
+        return Ok(());
+    }
 
     // Display the rows in a table format
     let mut table = Table::new();
@@ -36,8 +48,7 @@ async fn enroll_employee() -> anyhow::Result<()> { //list employees which are ca
         // ... add more headers as needed
     ]));
     // Add row data to the table
-    let mut row_number = 0;
-    for row in &result {
+    for (row_number, row) in result.iter().enumerate() {
         let emp_id: u64 = row.get::<u64, usize>(0);//&str>("Employee ID");//.expect("Employee ID should be found here"); //bigint unsigned
         let fname: String = row.get::<String, usize>(1); //&str>("fname");//.expect("First Name should be found here"); //varchar
         let lname: String = row.get::<String, usize>(2);//&str>("lname");//.expect("Last Name should be found here"); //varchar
@@ -48,14 +59,13 @@ async fn enroll_employee() -> anyhow::Result<()> { //list employees which are ca
             Cell::new(&lname.to_string()),
             // ... add more cells with row data as needed
         ]));
-        row_number += 1;
     }
     // Print the table to the command line
     table.printstd();
 
     println!("Please enter the row number corresponding to the Employee you would like to enroll: "); //take input
     let mut line = String::new();
-    let mut row_num;
+    let row_num;
     loop {
         io::stdin().read_line(&mut line).expect("Input should be read here");
         // if let Err(e) = line.trim().parse::<i32>() {
@@ -74,15 +84,11 @@ async fn enroll_employee() -> anyhow::Result<()> { //list employees which are ca
         // }
         
         if let Ok(num) = line.trim().parse::<usize>() {
-            match num {
-                num => {
-                    if let Some(row) = &result.get(num) {
-                        row_num = num;
-                        break;
-                    } else { //get returns None if the row does not exist
-                        println!("Row number {num} does not exist in the table, please try again");
-                    }
-                },
+            if result.get(num).is_some() {
+                row_num = num;
+                break;
+            } else { //get returns None if the row does not exist
+                println!("Row number {num} does not exist in the table, please try again");
             }
         } else { //parse returns an error, will not allow negative numbers (as negative rows do not exist in the table)
             println!("Invalid input, please try again");
@@ -118,7 +124,7 @@ async fn enroll_employee() -> anyhow::Result<()> { //list employees which are ca
 
     let new_fprint = fp_scanner
         .enroll_sync(template, None, Some(enroll_cb), None)
-        .unwrap();
+        .expect("Fingerprint could not be enrolled");
 
     println!("new_print contents: {:#?}",new_fprint);   //print the FpPrint struct
     println!("new_print username: {:#?}",new_fprint.username().unwrap());   //print the username of the FpPrint
@@ -126,15 +132,32 @@ async fn enroll_employee() -> anyhow::Result<()> { //list employees which are ca
     fp_scanner.close_sync(None).expect("Device could not be closed");
     println!("Total enroll stages: {}", counter.lock().unwrap());
 
-    //fs::create_dir("print").expect("Should create a directory called print");
-    let mut file = OpenOptions::new().write(true).create(true).open(format!("print/fprint_{}",uuid.to_string())).expect("Creation of file failed");//PathBuf::from("print/").join(format!("fprint_{uuid}")); //changed from File::create to OpenOptions::create
+    //std::fs::create_dir("print").expect("Should create a directory called print");
+    //println!("{}",format!("/print/fprint_{}", uuid.to_string()));
+    //println!("{}",dirs::home_dir().expect("failed to get home directory").join("print/fprint_").join(uuid.to_string()));
+    //.join("print/fprint_").join(uuid.to_string())
+    // println!("{:?}",dirs::home_dir().expect("Failed to get home directory").file_name());
+    // //dirs::home_dir().expect("failed to get home directory")
+    // let home = dirs::home_dir().expect("Failed to get home directory");
+    // let folder_path = home.join("print");
+
+    // std::fs::create_dir_all(&folder_path)?;
+    // let file_path = folder_path.join(format!("fprint_{}",uuid.to_string()));
+    // let mut file = File::create(&file_path)?;
+
+    //let mut file = OpenOptions::new().write(true).create(true).open(format!("root/print/fprint_{}",uuid.to_string())).expect("Creation of file failed"); //PathBuf::from("print/").join(format!("fprint_{uuid}")); //changed from File::create to OpenOptions::create
+    //format!("../../../print/fprint_{}",uuid.to_string())
+    //if home: dirs::home_dir().expect("Failed to get home directory").join("home/").join(format!("{}/",&env::var("SYSUSER")?)).join("print/fprint_").join(uuid.to_string())
+    let mut file = OpenOptions::new().write(true).create(true).open(dirs::home_dir().expect("Failed to get home directory").join(format!("print/fprint_{}",uuid.to_string()))).expect("Creation of file failed"); //changed from File::create to OpenOptions::create
     //fingerprint serialized for storage
-    //println!("Path: {}", file.display());
     file.write_all(&new_fprint.serialize().expect("Could not serialize fingerprint")).expect("Error: Could not store fingerprint to the txt file");
+
+    //println!("File for fingerprint has been created: {}",file_path.display());
+    //println!("File for fingerprint has been created: {}",file);
 
     let emp_id: u64 = row_queried.get::<u64, usize>(0);//&str>("emp_id"); //get Employee ID
 
-    let insert = sqlx::query!("CALL save_fprint_identifier(?,?)",emp_id, uuid.to_string())
+    let insert = sqlx::query!("CALL save_fprint_identifier(?,?)",emp_id,uuid.to_string())
         .execute(&pool)
         .await?;
 
@@ -376,11 +399,11 @@ pub fn progress_cb(
 }
 
 pub fn enroll_cb(
-    device: &FpDevice, 
+    _device: &FpDevice, 
     enroll_stage: i32, 
-    print: Option<FpPrint>, 
-    error: Option<libfprint_rs::GError>, 
-    data: &Option<i32>,
+    _print: Option<FpPrint>, 
+    _error: Option<libfprint_rs::GError>, 
+    _data: &Option<i32>,
 ) {
     println!("Enroll_cb Enroll stage: {}", enroll_stage);
 }
