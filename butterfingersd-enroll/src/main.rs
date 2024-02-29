@@ -113,7 +113,7 @@ async fn enroll_employee() -> anyhow::Result<()> { //list employees which are ca
     fp_scanner.open_sync(None).expect("Device could not be opened");
 
     let template = FpPrint::new(fp_scanner);
-    template.set_finger(FpFinger::RightIndex);
+    //template.set_finger(FpFinger::RightIndex);
     template.set_username(&uuid.to_string()); //inputted the uuid generated
 
     println!("Username of the fingerprint: {}", template.username().expect("Username should be included here"));

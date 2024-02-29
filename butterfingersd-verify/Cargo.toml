@@ -16,6 +16,8 @@ uuid = { workspace = true, features = ["v4","fast-rng","macro-diagnostics"] }
 # Use a faster (but still sufficiently random) RNG - fast-rng
 # Enable better diagnostics for compile-time UUIDs - macro-diagnostics
 prettytable = "0.10.0"
+dirs.workspace = true
+users.workspace = true
 
 # serde = "*.0.0"
 # butterfingersd-enroll = "0.1.0" (uncomment in case the verify depends on enroll)
