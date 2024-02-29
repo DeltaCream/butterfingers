@@ -148,7 +148,14 @@ async fn enroll_employee() -> anyhow::Result<()> { //list employees which are ca
     //let mut file = OpenOptions::new().write(true).create(true).open(format!("root/print/fprint_{}",uuid.to_string())).expect("Creation of file failed"); //PathBuf::from("print/").join(format!("fprint_{uuid}")); //changed from File::create to OpenOptions::create
     //format!("../../../print/fprint_{}",uuid.to_string())
     //if home: dirs::home_dir().expect("Failed to get home directory").join("home/").join(format!("{}/",&env::var("SYSUSER")?)).join("print/fprint_").join(uuid.to_string())
-    let mut file = OpenOptions::new().write(true).create(true).open(dirs::home_dir().expect("Failed to get home directory").join(format!("print/fprint_{}",uuid.to_string()))).expect("Creation of file failed"); //changed from File::create to OpenOptions::create
+    
+    // println!("Username of new_fprint: {}",new_fprint.username().expect("Username could not be retrieved"));
+    // let serialized_fprint = new_fprint.serialize().expect("Could not serialize fingerprint");
+    // println!("fprint serialized");
+    // let deserialized_fprint = FpPrint::deserialize(&serialized_fprint).expect("Could not deserialize fingerprint");
+    // println!("Username of deserialized_fprint: {}",deserialized_fprint.username().expect("Username could not be retrieved"));
+    
+    let mut file = OpenOptions::new().write(true).create(true).open(dirs::home_dir().expect("Failed to get home directory").join(format!("print/fprint_{}",uuid))).expect("Creation of file failed"); //changed from File::create to OpenOptions::create
     //fingerprint serialized for storage
     file.write_all(&new_fprint.serialize().expect("Could not serialize fingerprint")).expect("Error: Could not store fingerprint to the txt file");
 
