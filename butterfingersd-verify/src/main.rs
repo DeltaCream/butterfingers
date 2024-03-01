@@ -47,9 +47,8 @@ async fn main() {
     // } else {
     //     println!("Huh... the fingerprint is not verified");
     // }
-    
-    loop {
-        let context = FpContext::new();
+
+    let context = FpContext::new();
         let devices = context.devices();
         let fp_scanner = devices.first().expect("Devices could not be retrieved");
         
@@ -69,49 +68,58 @@ async fn main() {
                 }
             })
             .collect();
+    
+            // Print the list of files
+            println!("File names: {:?}", file_names);
 
-        // Print the list of files
-        println!("File names: {:?}", file_names);
+            // Iterate over the file names
+            let fingerprints = file_names.iter().map(|filename| {
+                let fpprint_file = OpenOptions::new().read(true).open(dirs::home_dir().expect("Home directory could not be found").join(format!("print/{}",filename))).expect("Could not read the fingerprint file"); //changed from File::open to OpenOptions::open
+                let mut reader = BufReader::new(fpprint_file);
+                let mut buffer = Vec::new();
+    
+                //read file into buffer vector
+                reader.read_to_end(&mut buffer).expect("Could not retrieve contents of file");
+    
+                //deserialize the fingerprint stored in the file
+                let deserialized_print = FpPrint::deserialize(&buffer);
+    
+                //retrieve the enrolled print from deserialized_print
+                deserialized_print.expect("Could not unwrap the deserialized print") //let enrolled_print = deserialized_print.expect("Could not unwrap the deserialized print");
+            }).collect::<Vec<FpPrint>>();
+    
+            for (i, fingerprint) in fingerprints.iter().enumerate() {
+                println!("Username for Fingerprint #{}: {:?}", i, fingerprint.username().expect("Fingerprint username could not be retrieved"));
+            }
+    
+            println!("Fingerprints retrieved");
 
-        // Iterate over the file names
-        let fingerprints = file_names.iter().map(|filename| {
-            let fpprint_file = OpenOptions::new().read(true).open(dirs::home_dir().expect("Home directory could not be found").join(format!("print/{}",filename))).expect("Could not read the fingerprint file"); //changed from File::open to OpenOptions::open
-            let mut reader = BufReader::new(fpprint_file);
-            let mut buffer = Vec::new();
-
-            //read file into buffer vector
-            reader.read_to_end(&mut buffer).expect("Could not retrieve contents of file");
-
-            //deserialize the fingerprint stored in the file
-            let deserialized_print = FpPrint::deserialize(&buffer);
-
-            //retrieve the enrolled print from deserialized_print
-            deserialized_print.expect("Could not unwrap the deserialized print") //let enrolled_print = deserialized_print.expect("Could not unwrap the deserialized print");
-        }).collect::<Vec<FpPrint>>();
-
-        println!("Fingerprints retrieved");
-
+    loop {
         println!("Before new_print declaration");
         let mut new_print = FpPrint::new(fp_scanner); // The variable that will hold the new print
         println!("Please scan your fingerprint");
         let print_identified = fp_scanner.identify_sync(&fingerprints, None, Some(match_cb), None, Some(&mut new_print)).expect("Fingerprint could not be identified due to an error");
         if print_identified.is_some() {
             let fprint = print_identified.expect("Print could not be unwrapped");
-            let uuid = fprint.username().expect("UUID (Username) could not be retrieved");
-            println!("UUID of the fingerprint: {}", uuid);
-            let result = record_attendance(&uuid).await;
-            if result.is_ok() {
-                println!("Attendance recorded for {}", uuid);
-            } else {
-                println!("Attendance could not be recorded");
+            let uuid = fprint.username();
+            match uuid {
+                Some(uuid) => {
+                    println!("UUID of the fingerprint: {}", uuid);
+                    let result = record_attendance(&uuid).await;
+                    if result.is_ok() {
+                        println!("Attendance recorded for {}", uuid);
+                    } else {
+                        println!("Attendance could not be recorded");
+                    }
+                },
+                None => println!("UUID could not be retrieved"),
             }
+            //println!("UUID of the fingerprint: {}", uuid);
         } else {
             println!("No matching fingerprint could be found")
-        }
-
-        fp_scanner.close_sync(None).expect("Device could not be closed");
+        }  
     }
-
+    //fp_scanner.close_sync(None).expect("Device could not be closed");
 }
 
 async fn record_attendance(uuid: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -130,12 +138,19 @@ async fn record_attendance(uuid: &str) -> Result<(), Box<dyn std::error::Error>>
 pub fn match_cb(
     _device: &FpDevice,
     matched_print: Option<FpPrint>,
-    _print: FpPrint,
+    print: FpPrint,
     _error: Option<libfprint_rs::GError>, //Option<glib::Error>,
     _data: &Option<()>,
 ) -> () {
-    if matched_print.is_some() {
-        println!("Matched");
+    if let Some(matched_print) = &matched_print {
+        println!("Matched print: {:#}", matched_print.username().expect("Fingerprint username could not be retrieved"));
+        if print.username().is_some() {
+            println!("Print: {:#}", &print.username().expect("Fingerprint username could not be retrieved"));
+        } else {
+            println!("Print does not have a username");
+        }
+        print.set_username(&matched_print.username().expect("Username could not be retrieved"));
+        println!("Print username: {:#}", &print.username().expect("Fingerprint username could not be retrieved"));
     } else {
         println!("Not matched");
     }
