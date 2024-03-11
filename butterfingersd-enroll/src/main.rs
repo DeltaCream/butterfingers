@@ -1,14 +1,13 @@
 use std::{
     env, 
-    fs::{OpenOptions, File},
+    fs::OpenOptions,
     io::{self, Write}, 
     sync::{Arc, Mutex},
-    path::{Path, PathBuf},
 };
 
-use libfprint_rs::{FpContext, FpPrint, FpDevice, FpFinger};
+use libfprint_rs::{FpContext, FpPrint, FpDevice};
 
-use sqlx::{MySqlPool, Row, Column};
+use sqlx::{MySqlPool, Row};
 use uuid::Uuid;
 
 use prettytable::{Table, Cell};
