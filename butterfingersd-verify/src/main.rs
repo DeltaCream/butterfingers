@@ -234,8 +234,9 @@ async fn employee_name_from_uuid(uuid: &str) -> String {
 async fn employee_name_from_empid(emp_id: &u64) -> String {
     dotenvy::dotenv().unwrap();
     let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap()).await.unwrap();
-    let result = sqlx::query!(r#"SELECT production_staff.emp_id AS "emp_id", 
-    employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" FROM production_staff JOIN employee USING(emp_id) WHERE emp_id = ?"#, emp_id)
+    let result = sqlx::query!(//r#"SELECT production_staff.emp_id AS "emp_id", 
+    //employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" FROM production_staff JOIN employee USING(emp_id) WHERE emp_id = ?"#, emp_id)
+        r#"SELECT employee.emp_id AS "emp_id", employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" FROM employee WHERE role_code = 2 AND emp_id = ?"#, emp_id)
         .fetch_one(&pool)
         .await
         .expect("Could not retrieve employee name from employee id");
