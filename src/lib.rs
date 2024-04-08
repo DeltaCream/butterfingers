@@ -13,6 +13,7 @@ pub mod butterfingersd_enroll {
         FpContext, 
         FpPrint, 
         FpDevice,
+        Cancellable,
     };
     
     use sqlx::{
@@ -180,7 +181,8 @@ pub mod butterfingersd_enroll {
         // println!("{:#?}", fp_scanner.features());  //print the features of the device (for debugging purposes)
     
         //open the fingerprint scanner
-        fp_scanner.open_sync(None).expect("Device could not be opened");
+        //fp_scanner.open_sync(None).expect("Device could not be opened");
+        fp_scanner.open_sync(Some(&Cancellable::new())).expect("Device could not be opened");
     
         //create a template for the user
         let template = FpPrint::new(fp_scanner);
@@ -320,9 +322,7 @@ pub mod butterfingersd_verify {
     };
     
     use libfprint_rs::{
-        FpContext,
-        FpPrint,
-        FpDevice,
+        Cancellable, FpContext, FpDevice, FpPrint
     };
     
     use sqlx::MySqlPool;
@@ -363,7 +363,8 @@ pub mod butterfingersd_verify {
         let fp_scanner = devices.first().expect("Devices could not be retrieved");
         
         //Open the fingerprint scanner
-        fp_scanner.open_sync(None).expect("Device could not be opened");
+        //fp_scanner.open_sync(None).expect("Device could not be opened");
+        fp_scanner.open_sync(Some(&Cancellable::new())).expect("Device could not be opened");
     
         // Get a list of all entries in the folder
         let entries = fs::read_dir(dirs::home_dir()
