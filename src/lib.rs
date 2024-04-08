@@ -378,12 +378,12 @@ pub mod butterfingersd_verify {
                             let result = record_attendance(&uuid).await;
                             if result.is_ok() { //if nothing wrong happened with record_attendance function
                                 //show that attendance was recorded for "employee name"
-                                println!("Attendance recorded for {}", employee_name_from_uuid(&uuid).await);
+                                println!("Attendance recorded for {}\n", employee_name_from_uuid(&uuid).await);
                                 //reset number of tries
                                 number_of_tries = 0;
                             } else { //if something wrong happened with record_attendance function
                                 //show that attendance could not be recorded
-                                println!("Attendance could not be recorded");
+                                println!("Attendance could not be recorded\n");
                                 //increment number of tries, possibly resulting to manual attendance in the next iteration of the loop
                                 number_of_tries += 1;
                             }
@@ -412,9 +412,9 @@ pub mod butterfingersd_verify {
             .execute(&pool) //execute the query
             .await?; //wait for the query to finish (some asynchronous programming shenanigans)
         //if the query was successful
-        if result.rows_affected() > 0 {
-            println!("Attendance recorded"); //print that the attendance was recorded
-        }
+        // if result.rows_affected() > 0 {
+        //     println!("Attendance recorded"); //print that the attendance was recorded
+        // }
         pool.close().await; //close connection to database
         Ok(()) //return from the function with no errors
     }
@@ -477,23 +477,25 @@ pub mod butterfingersd_verify {
     ) {
         if let Some(matched_print) = &matched_print { //get the matched print
             //print the matched print's username
-            println!("Matched print: {:#}", matched_print.username().expect("Fingerprint username could not be retrieved"));
+            //println!("Matched print: {:#}", matched_print.username().expect("Fingerprint username could not be retrieved"));
     
             //set the matched print's username to the print
-            if print.username().is_some() {
-                println!("Print: {:#}", &print.username().expect("Fingerprint username could not be retrieved"));
-            } else {
-                println!("Print does not have a username");
-            }
+            // if print.username().is_some() {
+            //     println!("Print: {:#}", &print.username().expect("Fingerprint username could not be retrieved"));
+            // } else {
+            //     println!("Print does not have a username");
+            // }
     
             //set the scanned fingerprint's username to the matched print's username 
             //(because the scanned fingerprint was matched with the previously enrolled fingerprint, 
             //and currently, the scanned fingerprint has no username)
             print.set_username(&matched_print.username().expect("Username could not be retrieved"));
     
+            println!("Matched");
+
             //print the scanned fingerprint's username for debugging purposes
             //(by this point, the scanned fingerprint should already have the same username as the matched fingerprint)
-            println!("Print username: {:#}", &print.username().expect("Fingerprint username could not be retrieved"));
+            //println!("Print username: {:#}", &print.username().expect("Fingerprint username could not be retrieved"));
         } else { //if matched_print is None (null value)
             //print that no fingerprint was matched with the scanned fingerprint
             println!("Not matched");

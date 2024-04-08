@@ -1,7 +1,9 @@
-use butterfingers::{
-    verify,
-    enroll,
-};
+// use butterfingers::{
+//     verify,
+//     enroll,
+// };
+
+use butterfingers;
 
 use std::io::{self, Write};
 use tokio::net::TcpStream;
@@ -39,33 +41,51 @@ repeat loop
 */
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let target_host = "localhost";
-    let target_port = 80;
+async fn main() {
 
-    loop {
-        let mut client = TcpStream::connect(format!("{}:{}", target_host, target_port)).await?;
-        
-        let mut input = String::new();
-        print!("Message: ");
-        io::stdout().flush()?; //flushes out everything stored in stdout to receive input with no problems
-        io::stdin().read_line(&mut input)?; //read input and store in variable input of String type
-
-        let message_body = json!({"message": input.trim()}); //message converted into a json Value type
-        let message_string = serde_json::to_string(&message_body)?; //line above converted from json Value type to a string
-        let message_length = message_string.len();
-        let post_message = format!("POST /attendance/kiosk/api/sendMessage HTTP/1.1\r\nHost: {}:{}", target_host, target_port) +
-            "\r\nContent-Type: application/json\r\n" +
-            &format!("Content-Length: {}\r\nConnection: close\r\n\r\n{}", message_length, message_string); //the entire post_message
-        
-        println!("{}", post_message);
-
-        client.write_all(post_message.as_bytes()).await?; //send post_message as u8 (bytes), with matching async support via await
-
-        let mut response = vec![0; 1024]; //allocate an array of 1024 bytes for the response to be stored
-        let n = client.read(&mut response).await?; //read a response to the client via the socket with async support via await
-        println!("{}", String::from_utf8_lossy(&response[..n])); //print the response to the command line
+    let mut input = String::new();
+    print!("Enter 'enroll' or 'verify': ");
+    io::stdout().flush().unwrap(); //flushes out everything stored in stdout to receive input with no problems
+    io::stdin().read_line(&mut input).unwrap(); //read input and store in variable input of String type
+    let input = input.trim();
+    if input == "enroll" {
+        println!("Enrolling...");
+        butterfingers::enroll().await;
+    } else if input == "verify" {
+        println!("Verifying...");
+        butterfingers::verify().await;
     }
+
+    //butterfingers::enroll().await;
+
+    //butterfingers::verify().await;
+
+    // let target_host = "localhost";
+    // let target_port = 80;
+
+    // loop {
+    //     let mut client = TcpStream::connect(format!("{}:{}", target_host, target_port)).await?;
+        
+    //     let mut input = String::new();
+    //     print!("Message: ");
+    //     io::stdout().flush()?; //flushes out everything stored in stdout to receive input with no problems
+    //     io::stdin().read_line(&mut input)?; //read input and store in variable input of String type
+
+    //     let message_body = json!({"message": input.trim()}); //message converted into a json Value type
+    //     let message_string = serde_json::to_string(&message_body)?; //line above converted from json Value type to a string
+    //     let message_length = message_string.len();
+    //     let post_message = format!("POST /attendance/kiosk/api/sendMessage HTTP/1.1\r\nHost: {}:{}", target_host, target_port) +
+    //         "\r\nContent-Type: application/json\r\n" +
+    //         &format!("Content-Length: {}\r\nConnection: close\r\n\r\n{}", message_length, message_string); //the entire post_message
+        
+    //     println!("{}", post_message);
+
+    //     client.write_all(post_message.as_bytes()).await?; //send post_message as u8 (bytes), with matching async support via await
+
+    //     let mut response = vec![0; 1024]; //allocate an array of 1024 bytes for the response to be stored
+    //     let n = client.read(&mut response).await?; //read a response to the client via the socket with async support via await
+    //     println!("{}", String::from_utf8_lossy(&response[..n])); //print the response to the command line
+    // }
 
     /*
     Stomp Client version - receive stuff
