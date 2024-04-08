@@ -42,9 +42,67 @@ pub mod butterfingersd_enroll {
     pub async fn enroll() { //entry point of the program
         enroll_employee().await.unwrap();
     }
+
+    /*
+    modified enroll_employee function
+
+    async fn enroll_employee(emp_id: &str) -> anyhow::Result<()> { //list employees which are candidates for enrollment
+        dotenvy::dotenv()?;
+        //generates a random uuid
+        let uuid = Uuid::new_v4();
+    
+        //enroll fingerprint
+        let context = FpContext::new();
+        let devices = context.devices();
+        let fp_scanner = devices.first().expect("Devices could not be retrieved");
+
+        //open the fingerprint scanner
+        fp_scanner.open_sync(None).expect("Device could not be opened");
+    
+        //create a template for the user
+        let template = FpPrint::new(fp_scanner);
+
+        //set the username of the template to the uuid generated
+        template.set_username(&uuid.to_string()); //or emp_id
+
+        //print username of the fingerprint template for debugging purposes
+        //(fingerprint template SHOULD have a username at this point)
+        println!("Username of the fingerprint: {}", template.username().expect("Username should be included here"));
+    
+        //counter for later use
+        let counter = Arc::new(Mutex::new(0));
+    
+        //prompt for the user
+        println!("Please put your right index finger onto the fingerprint scanner.");
+    
+        //scan a new fingerprint
+        let new_fprint = fp_scanner
+            .enroll_sync(template, None, Some(enroll_cb), None)
+            .expect("Fingerprint could not be enrolled");
+
+        //close the fingerprint scanner
+        fp_scanner.close_sync(None).expect("Device could not be closed");
+    
+        //show the total enroll stages (for debugging purposes)
+        println!("Total enroll stages: {}", counter.lock().unwrap());
+    
+        (code below may not be necessary now)
+        //create a file to store the fingerprint in (at the root folder, which is securely located in the home directory)
+        let mut file = OpenOptions::new()
+                                .write(true)
+                                .create(true)
+                                .open(dirs::home_dir()
+                                                .expect("Failed to get home directory")
+                                                .join(format!("print/fprint_{}",uuid)))
+                                .expect("Creation of file failed");
+    
+        //fingerprint serialized for storage at the file location
+        file.write_all(&new_fprint.serialize().expect("Could not serialize fingerprint"))
+            .expect("Error: Could not store fingerprint to the txt file");
+    }
+     =*/
     
     async fn enroll_employee() -> anyhow::Result<()> { //list employees which are candidates for enrollment
-    
         dotenvy::dotenv()?;
         let pool = MySqlPool::connect(&env::var("DATABASE_URL")?).await?; 
         let result = sqlx::query!("CALL enumerate_unenrolled_employees")
@@ -204,6 +262,43 @@ pub mod butterfingersd_enroll {
         println!("Progress_cb Enroll stage: {}", enroll_stage);
     }
     
+    /*
+    modified enroll cb function to print enroll stage
+    pub fn enroll_cb(
+        _device: &FpDevice, 
+        enroll_stage: i32, 
+        _print: Option<FpPrint>, 
+        _error: Option<libfprint_rs::GError>, 
+        _data: &Option<i32>,
+    ) {
+        //print enroll stage of the enroll function
+        let target_host = "localhost";
+        let target_port = 80;
+
+        let mut client = TcpStream::connect(format!("{}:{}", target_host, target_port)).await?;
+            
+        let mut input = String::new();
+        print!("Message: ");
+        io::stdout().flush()?; //flushes out everything stored in stdout to receive input with no problems
+        io::stdin().read_line(&mut input)?; //read input and store in variable input of String type
+
+        let message_body = json!({"message": input.trim()}); //message converted into a json Value type
+        let message_string = serde_json::to_string(&message_body)?; //line above converted from json Value type to a string
+        let message_length = message_string.len();
+        let post_message = format!("POST /attendance/kiosk/api/sendMessage HTTP/1.1\r\nHost: {}:{}", target_host, target_port) +
+            "\r\nContent-Type: application/json\r\n" +
+            &format!("Content-Length: {}\r\nConnection: close\r\n\r\n{}", message_length, message_string); //the entire post_message
+
+        println!("{}", post_message);
+
+        client.write_all(post_message.as_bytes()).await?; //send post_message as u8 (bytes), with matching async support via await
+
+        let mut response = vec![0; 1024]; //allocate an array of 1024 bytes for the response to be stored
+        let n = client.read(&mut response).await?; //read a response to the client via the socket with async support via await
+        println!("{}", String::from_utf8_lossy(&response[..n])); //print the response to the command line
+    }
+    */
+
     //function below is a callback function for the enroll function's stage
     pub fn enroll_cb(
         _device: &FpDevice, 
@@ -507,4 +602,9 @@ mod tests {
     fn it_works() {
         assert_eq!(2 + 2, 4);
     }
-}
+
+    #[test]
+    //test one
+
+    #[test]
+    //test two
