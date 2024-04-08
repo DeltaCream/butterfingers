@@ -40,6 +40,83 @@ repeat loop
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+
+    //setup involving the .env file
+    dotenvy::dotenv()?;
+
+    //determine if we are verifying or enrolling (placeholder for now)
+    let mut input = String::new();
+
+    print!("Enter 'enroll' or 'verify': ");
+    
+    io::stdout().flush()?; //flushes out everything stored in stdout to receive input with no problems
+    io::stdin().read_line(&mut input)?; //read input and store in variable input of String type
+    let input = input.trim().to_lowercase();
+    if input == "enroll" {
+        println!("Enrolling...");
+        butterfingers::enroll().await;
+    } else if input == "verify" {
+        println!("Verifying...");
+        butterfingers::verify().await;
+    }
+
+    /* Initial code for thread spawning
+
+    let process_type = Arc::new(Mutex::new(None));
+
+    // HTTP request handling logic
+    // Set the process_type flag based on the request received
+
+    // Spawn a thread to call either verify() or enroll() based on the flag value
+    // code below unnecessary for now
+    // let process_type_clone = process_type.clone();
+    // tokio::spawn(async move {
+    //     let mut guard = process_type_clone.lock().unwrap();
+    //     match *guard {
+    //         Some(ProcessType::Verify) => verify().await,
+    //         Some(ProcessType::Enroll) => enroll().await,
+    //         None => { /* Handle default case */ }
+    //     };
+    // });
+
+    // Start a separate thread for handling the additional process
+    let process_type_clone = process_type.clone();
+    let process_thread = std::thread::spawn(move || {
+        loop {
+            // Check the process type and start the corresponding process
+            let mut guard = process_type_clone.lock().unwrap();
+            match *guard {
+                Some(ProcessType::Verify) => verify(),
+                Some(ProcessType::Enroll) => enroll(),
+                None => { /* Handle default case */ }
+            };
+            
+            // Optionally add any logic to stop the thread or break out of the loop
+        }
+    });
+
+    // Main loop for listening to HTTP requests
+    loop {
+        // Handle incoming HTTP requests
+        // Set the process_type flag based on the received request
+        
+        // Update the process type flag to trigger the thread to start the process
+        let mut guard = process_type.lock().unwrap();
+        *guard = Some(ProcessType::Verify); // Or set it to Enroll based on the request
+        
+        // Optionally add any logic to stop the process thread or change the process type
+        
+        // Sleep or add any delay before processing the next request
+    }
+    
+    // Join the process thread when the main loop ends
+    process_thread.join().unwrap();
+
+    // Continue with the main process
+    
+     */
+
+    //message passing portion
     let target_host = "localhost";
     let target_port = 80;
 
@@ -63,7 +140,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         client.write_all(post_message.as_bytes()).await?; //send post_message as u8 (bytes), with matching async support via await
 
         let mut response = vec![0; 1024]; //allocate an array of 1024 bytes for the response to be stored
-        let n = client.read(&mut response).await?; //read a response to the client via the socket with async support via await
+        let n = client.read_exact(&mut response).await?; //read a response to the client via the socket with async support via await
         println!("{}", String::from_utf8_lossy(&response[..n])); //print the response to the command line
     }
 
@@ -92,7 +169,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //Ok(())
 }
 
-async fn send_message() {
+async fn send_message() -> Result<(), Box<dyn std::error::Error>> {
     let target_host = "localhost";
     let target_port = 80;
 
@@ -117,12 +194,13 @@ async fn send_message() {
     let mut response = vec![0; 1024]; //allocate an array of 1024 bytes for the response to be stored
     let n = client.read(&mut response).await?; //read a response to the client via the socket with async support via await
     println!("{}", String::from_utf8_lossy(&response[..n])); //print the response to the command line
+    Ok(())
 }
 
-fn handle_request(mut stream: TcpStream) {
+async fn handle_request(mut stream: TcpStream) {
     let mut buffer = [0; 1024];
-    stream.read(&mut buffer).unwrap();
-    let request = json!(&buffer);
+    stream.read_exact(&mut buffer).await.unwrap();
+    let request = json!(&buffer[..]);
     println!("Request: {}", String::from_utf8_lossy(&buffer[..]));
 }
 
