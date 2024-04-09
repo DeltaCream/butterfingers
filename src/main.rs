@@ -4,6 +4,7 @@ use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use serde_json::json;
+use serde::Deserialize;
 
 /*
 Algorithm:
@@ -36,55 +37,109 @@ repeat loop
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //type "to" or "from" to determine which function to call
     dotenvy::dotenv()?;
-    let process_type = env::var("PROCESS_TYPE")?;
-    if process_type == "from" {
-        println!("From Butterfingers...");
-        from_butterfingers().await?;
-    } else if process_type == "to" {
-        println!("To Butterfingers...");
-        to_butterfingers().await?;
-    }
+    //let process_type = env::var("PROCESS_TYPE")?;
+    //if process_type == "from" {
+    //    println!("From Butterfingers...");
+    //    from_butterfingers().await?;
+    //} else if process_type == "to" {
+      println!("To Butterfingers...");
+      to_butterfingers().await?;
+    //}
+	
     Ok(())
 }
 
-
+static mut currMode: String = String::from("none");
 async fn to_butterfingers() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv()?;
     let listen_host = env::var("LISTEN_HOST")?;
     let listen_port = env::var("LISTEN_PORT")?;
 
-    let ip_port_addr = format!("{}:{}", listen_host, listen_port);
+    let ip_port_addr = format!("{}:{}", listen_host, listen_port); //concat string
 
-    println!("{}", ip_port_addr);
-
-    let addr = ip_port_addr.parse::<SocketAddr>().unwrap();
+    println!("{}", ip_port_addr); //print formatted ip
+    
+    let addr = ip_port_addr.parse::<SocketAddr>().unwrap(); //convert socket addr
     //TcpListener::bind because we want to accept connections
     let server = TcpListener::bind(&addr).await.unwrap();
     println!("[*] Listening on {}", addr);
+    
     loop {
         let (client, addr) = server.accept().await.unwrap();
         println!("[*] Accepted Connection from {}", addr);
 
         tokio::spawn(async move {
-            if let Err(e) = handle_client(client).await {
+            if let Err(e) = handle_client(client, addr_of_mut!(currMode)).await {
                 eprintln!("Error handling client: {}", e);
             }
         });
     }
 }
+#[derive(Deserialize, Debug)]
+struct ConnectionMessage {
+	fingerprintMode: String,
+}
+//response types:
+//type 0 - connect success
+//type 1 - disconnect success
+//type 2 - error
+//type 3 - plain message to identify mode
+//type 4 - plain message to enroll mode
+//static mut currMode: Option<String> = None;
+async fn handle_client(mut client: TcpStream, mode: &mut String) -> Result<(), Box<dyn std::error::Error>> { //handle client function
 
-async fn handle_client(mut client: TcpStream) -> Result<(), Box<dyn std::error::Error>> { //handle client function
+    println!("current mode before handler: {}", currMode);
     println!("Inside client handler");
     let mut buffer = [0; 1024]; //buffer for 1024 bytes
     println!("Passed buffer");
     let n = client.read(&mut buffer).await?; //read a response to the client via the socket
     println!("Passed read");
     let msg_from_client = String::from_utf8_lossy(&buffer[..n]); //get the message and decode it as a string
-    println!("Passed message processing");
+    println!("{}", msg_from_client);
+    let c_msg: ConnectionMessage = serde_json::from_str(&msg_from_client).unwrap();
+	//println!("Passed message processing");
     println!("[*] Received: {}", msg_from_client);
+	let mut response;
+	if c_msg.fingerprintMode == "disconnect"{
+		*currMode = "none".to_string();
+		response = json!({
+            		"responseType": 1,
+            		"responseMsg" : "Disconnection successful."
+        	});
+    	} else if currMode != "none"{
+        	response = json!({
+            		"responseType": 2,
+            		"responseMsg" : "Another procedure is using the scanner!"
+        	});
+	} else if currMode == "none" && c_msg.fingerprintMode == "enroll" {
+		*currMode = "enroll".to_string();
+		response = json!({
+            		"responseType": 0,
+            		"responseMsg" : "Enrollment mode started."
+        	});
+	} else if currMode == "none" && c_msg.fingerprintMode == "identify" {
+		*currMode = "identify".to_string();
+		response = json!({
+            		"responseType": 0,
+            		"responseMsg" : "Attendance mode started."
+        	});
 
-    let response = "Server Acknowledged!";
-    client.write_all(response.as_bytes()).await?;
+	} else {
+        	response = json!({
+            		"responseType": 2,
+            		"responseMsg": "Default Message"
+        	});
+    } 
+    //if let Some(serde_json::Value) = response {
+    client.write_all(response.to_string().as_bytes()).await?;
+    //}else {
+    //    println!("How is it possible that the response is empty?");
+    //}
+    //let response = "Server Acknowledged!";
+ 
+       println!("current mode after handler: {}", currMode);
+
+
     Ok(())
 }
 
@@ -94,7 +149,6 @@ async fn from_butterfingers() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv()?;
     let target_host = &env::var("TARGET_HOST")?;
     let target_port = &env::var("TARGET_PORT")?;
-
     loop {
         //TcpStream::connect because we want to connect to the server
         let mut client = TcpStream::connect(format!("{}:{}", target_host, target_port)).await?;
