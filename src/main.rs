@@ -5,11 +5,11 @@ use butterfingers::{
 use futures::channel::mpsc::{unbounded, UnboundedSender};
 use tokio_tungstenite::{accept_async, WebSocketStream};
 //use tokio::net::unix::SocketAddr;
-use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::{accept, Message};
 
 use std::collections::HashMap;
-use std::env;
-use std::io::{self, Write};
+use std::{env, thread};
+use std::io::{self, Read, Write};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tokio::net::{TcpListener, TcpStream};
@@ -48,8 +48,17 @@ repeat loop
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    //type "to" or "from" to determine which function to call
+    dotenvy::dotenv()?;
+    let process_type = env::var("PROCESS_TYPE")?;
+    if process_type == "from" {
+        from_butterfingers().await?;
+    } else if process_type == "to" {
+        to_butterfingers().await?;
+    }
+
     //from_butterfingers().await?;
-    to_butterfingers().await?;
+    //to_butterfingers().await?;
     Ok(())
 
     //global variable to hold a thread
@@ -254,8 +263,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn to_butterfingers() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv()?;
-    let listen_host = &env::var("LISTEN_HOST")?;
-    let listen_port = &env::var("LISTEN_PORT")?;
+    let listen_host = env::var("LISTEN_HOST")?;
+    let listen_port = env::var("LISTEN_PORT")?;
 
     let ip_port_addr = format!("{}:{}", listen_host, listen_port);
 
@@ -263,43 +272,96 @@ async fn to_butterfingers() -> Result<(), Box<dyn std::error::Error>> {
 
     let addr = ip_port_addr.parse::<SocketAddr>().unwrap();
     //TcpListener::bind because we want to accept connections
-    let listener = TcpListener::bind(&addr).await.unwrap();
+    let server = TcpListener::bind(&addr).await.unwrap();
     println!("[*] Listening on {}", addr);
 
     loop {
-        let (stream, _) = listener.accept().await.unwrap();
-        println!("[*] Accepted connection from: {}", stream.peer_addr().unwrap());
-        tokio::spawn(async move {
-            if let Ok(mut ws_stream) = accept_async(stream).await {
-                // Handle WebSocket connection
-                //this is where the code for handle_client will go
-                let buffer = [0; 1024];
-                while let Some(Ok(message)) = ws_stream.next().await {
-                    match message {
-                        Message::Text(text) => {
-                            // Handle text message
-                            println!("Received text message: {}", text);
-                        }
-                        Message::Binary(data) => {
-                            // Handle binary message
-                            println!("Received binary message: {:?}", data);
-                        }
-                        _ => {
-                            // Handle other message types if necessary
-                        }
-                    }
-                }
+        // let (client, addr) = server.accept().await.unwrap(); //client is a stream
+        // println!("[*] Accepted connection from: {}", stream.peer_addr().unwrap());
+        
+        // tokio::spawn(async move {
+        //     if let Ok(mut ws_stream) = accept_async(stream).await {
+        //         // Handle WebSocket connection
+        //         //this is where the code for handle_client will go
+        //         let buffer = [0; 1024];
+        //         while let Some(Ok(message)) = ws_stream.next().await {
+        //             match message {
+        //                 Message::Text(text) => {
+        //                     // Handle text message
+        //                     println!("Received text message: {}", text);
+        //                 }
+        //                 Message::Binary(data) => {
+        //                     // Handle binary message
+        //                     println!("Received binary message: {:?}", data);
+        //                 }
+        //                 _ => {
+        //                     // Handle other message types if necessary
+        //                 }
+        //             }
+        //         }
 
-                // Handle disconnection
-                let response = String::from("Server Acknowledged!");
-                ws_stream.send(Message::Text(response)).await.unwrap();
-                ws_stream.close(None).await.unwrap();
-            } else {
-                // Handle failed WebSocket connection
-                println!("WebSocket connection failed");
+        //         // Handle disconnection
+        //         let response = String::from("Server Acknowledged!");
+        //         ws_stream.send(Message::Text(response)).await.unwrap();
+        //         ws_stream.close(None).await.unwrap();
+        //     } else {
+        //         // Handle failed WebSocket connection
+        //         // You can implement your error handling logic here
+        //         //print the details of the websocket error
+        //         println!("WebSocket connection failed");
+        //     }
+        // }); //spawns an asynchronous thread and executes it
+
+        // for stream in server.incoming() {
+        //     let stream = stream.unwrap();
+        //     let mut ws_stream = accept(stream).unwrap();
+    
+        //     thread::spawn(move || {
+        //         // Handle WebSocket connection
+        //         // You can implement your WebSocket message handling logic here
+        //         let request = ws_stream.read().unwrap();
+        //         let msg_from_client = request.to_text().unwrap();
+        //         println!("[*] Received message from client: {}", msg_from_client);
+        //         let response = String::from("Server Acknowledged!");
+        //         ws_stream.write(tokio_tungstenite::tungstenite::Message::Text(response)).unwrap();
+        //         ws_stream.close(None).unwrap();
+        //     });
+        // }
+
+        // let (client, addr) = server.accept().await.unwrap();
+        // println!("[*] Accepted connection from: {}", addr);
+        // thread::spawn(move || {
+        //     // Handle WebSocket connection
+        //     let mut buffer = [0; 1024];
+        //     let request = client.read_exact(&mut buffer).await.unwrap();
+        //     let msg_from_client = request.to_text().unwrap();
+        //     println!("[*] Received message from client: {}", msg_from_client);
+        //     let response = String::from("Server Acknowledged!");
+        //     client.write(&response.as_bytes()).unwrap();
+        //     client.close().unwrap();
+        // });
+        //println!("[*] Accepted connection from: {}", addr);
+
+        let (client, addr) = server.accept().await.unwrap();
+        println!("[*] Accepted Connection from {}", addr);
+
+        tokio::spawn(async move {
+            if let Err(e) = handle_client(client).await {
+                eprintln!("Error handling client: {}", e);
             }
-        }); //spawns an asynchronous thread and executes it
+        });
     }
+}
+
+async fn handle_client(mut client: TcpStream) -> Result<(), Box<dyn std::error::Error>> { //handle client function
+    let mut buffer = [0; 1024]; //buffer for 1024 bytes
+    client.read_exact(&mut buffer).await?; //read a response to the client via the socket
+    let msg_from_client = String::from_utf8_lossy(&buffer); //get the message and decode it as a string
+    println!("[*] Received: {}", msg_from_client);
+
+    let response = "Server Acknowledged!";
+    client.write_all(response.as_bytes()).await?;
+    Ok(())
 }
 
 // async fn handle_client(stream: WebSocketStream<TcpStream>) {
