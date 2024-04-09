@@ -1,10 +1,12 @@
 use std::env;
 use std::io::{self, Write};
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use serde_json::json;
 use serde::Deserialize;
+use tokio::sync::Mutex;
 
 /*
 Algorithm:
@@ -49,8 +51,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-static mut currMode: String = String::from("none");
+//static mut currMode: Arc<Mutex<String>> = Arc::new(Mutex::new(String::from("none")));
 async fn to_butterfingers() -> Result<(), Box<dyn std::error::Error>> {
+    let curr_mode = Arc::new(Mutex::new(String::from("none")));
     dotenvy::dotenv()?;
     let listen_host = env::var("LISTEN_HOST")?;
     let listen_port = env::var("LISTEN_PORT")?;
@@ -67,9 +70,9 @@ async fn to_butterfingers() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let (client, addr) = server.accept().await.unwrap();
         println!("[*] Accepted Connection from {}", addr);
-
+        let mode_clone = curr_mode.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_client(client, addr_of_mut!(currMode)).await {
+            if let Err(e) = handle_client(client, mode_clone).await {
                 eprintln!("Error handling client: {}", e);
             }
         });
@@ -77,7 +80,7 @@ async fn to_butterfingers() -> Result<(), Box<dyn std::error::Error>> {
 }
 #[derive(Deserialize, Debug)]
 struct ConnectionMessage {
-	fingerprintMode: String,
+	fingerprint_mode: String,
 }
 //response types:
 //type 0 - connect success
@@ -86,9 +89,9 @@ struct ConnectionMessage {
 //type 3 - plain message to identify mode
 //type 4 - plain message to enroll mode
 //static mut currMode: Option<String> = None;
-async fn handle_client(mut client: TcpStream, mode: &mut String) -> Result<(), Box<dyn std::error::Error>> { //handle client function
-
-    println!("current mode before handler: {}", currMode);
+async fn handle_client(mut client: TcpStream, mode: Arc<Mutex<String>>) -> Result<(), Box<dyn std::error::Error>> { //handle client function
+    let mut curr_mode = mode.lock().await;
+    println!("current mode before handler: {}", *curr_mode);
     println!("Inside client handler");
     let mut buffer = [0; 1024]; //buffer for 1024 bytes
     println!("Passed buffer");
@@ -100,25 +103,25 @@ async fn handle_client(mut client: TcpStream, mode: &mut String) -> Result<(), B
 	//println!("Passed message processing");
     println!("[*] Received: {}", msg_from_client);
 	let mut response;
-	if c_msg.fingerprintMode == "disconnect"{
-		*currMode = "none".to_string();
+	if c_msg.fingerprint_mode == "disconnect"{
+		*curr_mode = "none".to_string();
 		response = json!({
             		"responseType": 1,
             		"responseMsg" : "Disconnection successful."
         	});
-    	} else if currMode != "none"{
+    	} else if *curr_mode != "none"{
         	response = json!({
             		"responseType": 2,
             		"responseMsg" : "Another procedure is using the scanner!"
         	});
-	} else if currMode == "none" && c_msg.fingerprintMode == "enroll" {
-		*currMode = "enroll".to_string();
+	} else if *curr_mode == "none" && c_msg.fingerprint_mode == "enroll" {
+		*curr_mode = "enroll".to_string();
 		response = json!({
             		"responseType": 0,
             		"responseMsg" : "Enrollment mode started."
         	});
-	} else if currMode == "none" && c_msg.fingerprintMode == "identify" {
-		*currMode = "identify".to_string();
+	} else if *curr_mode == "none" && c_msg.fingerprint_mode == "identify" {
+		*curr_mode = "identify".to_string();
 		response = json!({
             		"responseType": 0,
             		"responseMsg" : "Attendance mode started."
@@ -137,7 +140,7 @@ async fn handle_client(mut client: TcpStream, mode: &mut String) -> Result<(), B
     //}
     //let response = "Server Acknowledged!";
  
-       println!("current mode after handler: {}", currMode);
+    println!("current mode after handler: {}", curr_mode);
 
 
     Ok(())
