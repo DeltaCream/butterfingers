@@ -1,5 +1,5 @@
 pub use butterfingersd_enroll::enroll as enroll;
-pub use butterfingersd_verify::verify as verify;
+pub use butterfingersd_identify::identify as identify;
 
 pub mod butterfingersd_enroll {
     use std::{
@@ -314,7 +314,7 @@ pub mod butterfingersd_enroll {
     }
 }
 
-pub mod butterfingersd_verify {
+pub mod butterfingersd_identify {
     use std::{
         env,
         fs::{self, OpenOptions},
@@ -354,7 +354,7 @@ pub mod butterfingersd_verify {
     */
     
     //#[tokio::main]
-    pub async fn verify() {
+    pub async fn identify() {
         //Get FpContext to get devices
         let context = FpContext::new();
         //Use FpContext to get devices (returns a vector/array of devices)
@@ -484,7 +484,10 @@ pub mod butterfingersd_verify {
                                 number_of_tries += 1;
                             }
                         },
-                        None => println!("UUID could not be retrieved"), //uuid did not contain a string (essentially None acts as a null value)
+                        None => {
+                            println!("UUID could not be retrieved"); //uuid did not contain a string (essentially None acts as a null value)
+                            number_of_tries += 1;
+                        },
                     }
                     //println!("UUID of the fingerprint: {}", uuid);
                 } else { //print_identified did not identify a fingerprint
