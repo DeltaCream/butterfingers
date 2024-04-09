@@ -7,7 +7,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use serde_json::json;
 use serde::Deserialize;
 use tokio::sync::Mutex;
-
+use butterfingersd_enroll::enroll;
+use butterfingersd_identify::identify;
 /*
 Algorithm:
 
@@ -54,6 +55,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //static mut currMode: Arc<Mutex<String>> = Arc::new(Mutex::new(String::from("none")));
 async fn to_butterfingers() -> Result<(), Box<dyn std::error::Error>> {
     let curr_mode = Arc::new(Mutex::new(String::from("none")));
+    //declare fp device here but not open it
+
     dotenvy::dotenv()?;
     let listen_host = env::var("LISTEN_HOST")?;
     let listen_port = env::var("LISTEN_PORT")?;
@@ -71,6 +74,7 @@ async fn to_butterfingers() -> Result<(), Box<dyn std::error::Error>> {
         let (client, addr) = server.accept().await.unwrap();
         println!("[*] Accepted Connection from {}", addr);
         let mode_clone = curr_mode.clone();
+        //pass fpdevice here
         tokio::spawn(async move {
             if let Err(e) = handle_client(client, mode_clone).await {
                 eprintln!("Error handling client: {}", e);
@@ -81,6 +85,7 @@ async fn to_butterfingers() -> Result<(), Box<dyn std::error::Error>> {
 #[derive(Deserialize, Debug)]
 struct ConnectionMessage {
 	fingerprint_mode: String,
+	emp_id: Option<u64>
 }
 //response types:
 //type 0 - connect success
@@ -104,23 +109,36 @@ async fn handle_client(mut client: TcpStream, mode: Arc<Mutex<String>>) -> Resul
     println!("[*] Received: {}", msg_from_client);
 	let mut response;
 	if c_msg.fingerprint_mode == "disconnect"{
+		//destroy co-routine
+		//close fp device here
 		*curr_mode = "none".to_string();
 		response = json!({
             		"responseType": 1,
             		"responseMsg" : "Disconnection successful."
         	});
-    	} else if *curr_mode != "none"{
+    	} else if *curr_mode != "none"{ //if device is open, send error
+  
         	response = json!({
             		"responseType": 2,
             		"responseMsg" : "Another procedure is using the scanner!"
         	});
 	} else if *curr_mode == "none" && c_msg.fingerprint_mode == "enroll" {
-		*curr_mode = "enroll".to_string();
-		response = json!({
-            		"responseType": 0,
-            		"responseMsg" : "Enrollment mode started."
-        	});
+		//call enroll and pass fpdevice handle and emp id
+		if(c_msg.emp_id == None){
+			response = json!({
+            			"responseType": 2,
+            			"responseMsg" : "Employee ID not specified!"
+        		});
+		} else {
+			*curr_mode = "enroll".to_string();
+			response = json!({
+            			"responseType": 0,
+            			"responseMsg" : "Enrollment mode started."
+        		});
+		}
+		
 	} else if *curr_mode == "none" && c_msg.fingerprint_mode == "identify" {
+		//call identify and pass fpdevice handle
 		*curr_mode = "identify".to_string();
 		response = json!({
             		"responseType": 0,
