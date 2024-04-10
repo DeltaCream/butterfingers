@@ -1,6 +1,8 @@
 pub use butterfingersd_enroll::enroll as enroll;
 pub use butterfingersd_identify::identify as identify;
 
+
+
 pub mod butterfingersd_enroll {
     use std::{
         env, 
@@ -228,10 +230,17 @@ pub mod butterfingersd_identify {
     use libfprint_rs::{
         Cancellable, FpContext, FpDevice, FpPrint
     };
-    
+    use serde_json::json;
+    use serde::Deserialize;
     use sqlx::MySqlPool;
     use tokio::runtime::Runtime;
-    
+    use tokio::net::{TcpListener, TcpStream};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    #[derive(Deserialize, Debug)]
+	pub struct ConnectionMessage {
+		fingerprintMode: String,
+		emp_id: Option<u64>
+	}
     /* Harlan's initial algorithm
     while true{
         scan for finger
@@ -258,6 +267,39 @@ pub mod butterfingersd_identify {
     }
     */
     
+    //static mut currMode: Arc<Mutex<String>> = Arc::new(Mutex::new(String::from("none")));
+
+    async fn from_butterfingers(receiver: String, message: String) -> Result<String, Box<dyn std::error::Error>> {
+    dotenvy::dotenv()?;
+    let target_host = &env::var("TARGET_HOST")?;
+    let target_port = &env::var("TARGET_PORT")?;
+    let result: String = String::new();
+        //TcpStream::connect because we want to connect to the server
+        let mut client = TcpStream::connect(format!("{}:{}", target_host, target_port)).await?;
+            
+        let mut input = String::new();
+        //print!("Message: ");
+        //io::stdout().flush()?; //flushes out everything stored in stdout to receive input with no problems
+        //io::stdin().read_line(&mut input)?; //read input and store in variable input of String type
+
+        let message_body = json!({"receiver": receiver.trim(), "message": message}); //message converted into a json Value type
+        let message_string = serde_json::to_string(&message_body)?; //line above converted from json Value type to a string
+        let message_length = message_string.len();
+        let post_message = format!("POST /attendance/kiosk/api/sendMessage HTTP/1.1\r\nHost: {}:{}", target_host, target_port) +
+            "\r\nContent-Type: application/json\r\n" +
+            &format!("Content-Length: {}\r\nConnection: close\r\n\r\n{}", message_length, message_string); //the entire post_message
+        
+        println!("{}", post_message); //print the post message to the command line
+
+        client.write_all(post_message.as_bytes()).await?; //send post_message as u8 (bytes), with matching async support via await
+
+        let mut response = vec![0; 1024]; //allocate an array of 1024 bytes for the response to be stored
+        let n = client.read(&mut response).await?; //read a response to the client via the socket with async support via await
+        println!("{}", String::from_utf8_lossy(&response[..n])); //print the response to the command line
+    	let result = String::from_utf8_lossy(&response[..n]);
+    
+    Ok(String::from(result))
+}
     //#[tokio::main]
     pub fn identify() {
         //Get FpContext to get devices
@@ -341,7 +383,7 @@ pub mod butterfingersd_identify {
                                     continue;
                                 },
                             };
-                            let result = manual_attendance(&emp_id);
+                            let result = manual_attendance();
                             if result.is_ok() {
                                 println!("Attendance manually recorded for {}", employee_name_from_empid(&emp_id));
                                 number_of_tries = 0;
@@ -428,14 +470,18 @@ pub mod butterfingersd_identify {
 
         Ok(()) //return from the function with no errors
     }
+
     
-    fn manual_attendance(emp_id: &u64) -> Result<(), Box<dyn std::error::Error>> {
+    fn manual_attendance() -> Result<(), Box<dyn std::error::Error>> {
         //setup involving the .env file
         dotenvy::dotenv()?;
-
+        
         //connect to the database
         let rt = Runtime::new().expect("Failed to create Tokio runtime");
             rt.block_on(async {
+            let msg = from_butterfingers(String::from("identify"), String::from("manualMode"));
+	let c_msg: ConnectionMessage = serde_json::from_str(&msg.await).unwrap();
+	let emp_id = c_msg.emp_id;
             let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap()).await.unwrap();
             //query the record_attendance_by_empid stored procedure (manual attendance)
             let result = sqlx::query!("CALL record_attendance_by_empid(?)", emp_id)
@@ -451,6 +497,8 @@ pub mod butterfingersd_identify {
 
         Ok(()) //return from the function with no errors
     }
+    
+    
     
     fn employee_name_from_uuid(uuid: &str) -> String {
         dotenvy::dotenv().unwrap();

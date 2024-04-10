@@ -9,6 +9,12 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use serde_json::json;
 use serde::Deserialize;
 use tokio::sync::{mpsc, Mutex};
+use libfprint_rs::{
+        FpContext, 
+        FpPrint, 
+        FpDevice,
+        Cancellable,
+    };
 /*
 Algorithm:
 
@@ -75,7 +81,7 @@ async fn to_butterfingers() -> Result<(), Box<dyn std::error::Error>> {
         let (client, addr) = server.accept().await.unwrap();
         //let (tx, rx) = mpsc::channel(5);
         println!("[*] Accepted Connection from {}", addr);
-        let mode_clone = curr_mode.clone();
+        //let mode_clone = curr_mode.clone();
         let thread_clone = thread_handle.clone();
         //pass fpdevice here
         tokio::spawn(async move {
@@ -88,17 +94,15 @@ async fn to_butterfingers() -> Result<(), Box<dyn std::error::Error>> {
         // });
     }
 }
-#[derive(Deserialize, Debug)]
-struct ConnectionMessage {
-	fingerprintMode: String,
-	emp_id: Option<u64>
-}
+
 //response types:
 //type 0 - connect success
 //type 1 - disconnect success
 //type 2 - error
 //type 3 - plain message to identify mode
 //type 4 - plain message to enroll mode
+//type 5 - special message to identify mode
+//type 6 - special message to identify mode
 //static mut currMode: Option<String> = None;
 async fn handle_client(mut client: TcpStream, handle: Arc<Mutex<Option<JoinHandle<()>>>>) -> Result<(), Box<dyn std::error::Error>> { //handle client function
     //let mut curr_mode = mode.lock().await;
@@ -112,26 +116,40 @@ async fn handle_client(mut client: TcpStream, handle: Arc<Mutex<Option<JoinHandl
     println!("Passed read");
     let msg_from_client = String::from_utf8_lossy(&buffer[..n]); //get the message and decode it as a string
     println!("{}", msg_from_client);
-    let c_msg: ConnectionMessage = serde_json::from_str(&msg_from_client).unwrap();
+    let c_msg: butterfingersd_identify::ConnectionMessage = serde_json::from_str(&msg_from_client).unwrap();
 	//println!("Passed message processing");
     println!("[*] Received: {}", msg_from_client);
 	let response;
 	if c_msg.fingerprintMode == "disconnect"{
 		//destroy co-routine
+		if !handle_inner.is_none()  {
+			//use mprc to end function of thread
+			handle_inner.join();
+			*handle_inner = None;
+		}
+		
 		//close fp device here
-		*curr_mode = "none".to_string();
+		//Get FpContext to get devices
+        	let context = FpContext::new();
+        	//Use FpContext to get devices (returns a vector/array of devices)
+        	let devices = context.devices();
+        	for device in devices {
+        		if device.is_open(){
+        			device.close_sync(None).unwrap();
+        		}
+        	}
+		//*curr_mode = "none".to_string();
 		response = json!({
             		"responseType": 1,
             		"responseMsg" : "Disconnection successful."
         	});
     	//} else if *curr_mode != "none"{ //if device is open, send error
-        } else if handle_inner.is_
-  
+        } else if !handle_inner.is_none()  {
         	response = json!({
             		"responseType": 2,
             		"responseMsg" : "Another procedure is using the scanner!"
         	});
-	} else if *curr_mode == "none" && c_msg.fingerprintMode == "enroll" {
+	} else if handle_inner.is_none()  && c_msg.fingerprintMode == "enroll" {
 		//call enroll and pass fpdevice handle and emp id
 		if c_msg.emp_id.is_none() {
 			response = json!({
@@ -139,21 +157,21 @@ async fn handle_client(mut client: TcpStream, handle: Arc<Mutex<Option<JoinHandl
             			"responseMsg" : "Employee ID not specified!"
         		});
 		} else {
-			*curr_mode = "enroll".to_string();
+			//*curr_mode = "enroll".to_string();
 			response = json!({
             			"responseType": 0,
             			"responseMsg" : "Enrollment mode started."
         		});
 		}
 		
-	} else if *curr_mode == "none" && c_msg.fingerprintMode == "identify" {
+	} else if handle_inner.is_none() && c_msg.fingerprintMode == "identify" {
 		//call identify and pass fpdevice handle
-		*curr_mode = "identify".to_string();
+		//*curr_mode = "identify".to_string();
         //identify().await;
         //identify().await;
-        thread::spawn(|| {
-            identify(); 
-        });
+        	thread::spawn(|| {
+            		identify(); 
+        	});
 		response = json!({
             		"responseType": 0,
             		"responseMsg" : "Attendance mode started."
@@ -172,7 +190,7 @@ async fn handle_client(mut client: TcpStream, handle: Arc<Mutex<Option<JoinHandl
     //}
     //let response = "Server Acknowledged!";
  
-    println!("current mode after handler: {}", curr_mode);
+    //println!("current mode after handler: {}", curr_mode);
 
 
     Ok(())
@@ -180,37 +198,9 @@ async fn handle_client(mut client: TcpStream, handle: Arc<Mutex<Option<JoinHandl
 
 
 
-async fn from_butterfingers() -> Result<(), Box<dyn std::error::Error>> {
-    dotenvy::dotenv()?;
-    let target_host = &env::var("TARGET_HOST")?;
-    let target_port = &env::var("TARGET_PORT")?;
-    loop {
-        //TcpStream::connect because we want to connect to the server
-        let mut client = TcpStream::connect(format!("{}:{}", target_host, target_port)).await?;
-            
-        let mut input = String::new();
-        print!("Message: ");
-        io::stdout().flush()?; //flushes out everything stored in stdout to receive input with no problems
-        io::stdin().read_line(&mut input)?; //read input and store in variable input of String type
 
-        let message_body = json!({"message": input.trim()}); //message converted into a json Value type
-        let message_string = serde_json::to_string(&message_body)?; //line above converted from json Value type to a string
-        let message_length = message_string.len();
-        let post_message = format!("POST /attendance/kiosk/api/sendMessage HTTP/1.1\r\nHost: {}:{}", target_host, target_port) +
-            "\r\nContent-Type: application/json\r\n" +
-            &format!("Content-Length: {}\r\nConnection: close\r\n\r\n{}", message_length, message_string); //the entire post_message
-        
-        println!("{}", post_message); //print the post message to the command line
 
-        client.write_all(post_message.as_bytes()).await?; //send post_message as u8 (bytes), with matching async support via await
 
-        let mut response = vec![0; 1024]; //allocate an array of 1024 bytes for the response to be stored
-        let n = client.read(&mut response).await?; //read a response to the client via the socket with async support via await
-        println!("{}", String::from_utf8_lossy(&response[..n])); //print the response to the command line
-    }
-    
-    //Ok(())
-}
 
 //will listen whether enroll or verify (asynchronously)
 //spawn a thread to enroll
