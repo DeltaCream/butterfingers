@@ -326,6 +326,7 @@ pub mod butterfingersd_identify {
     };
     
     use sqlx::MySqlPool;
+    use tokio::runtime::Runtime;
     
     /* Harlan's initial algorithm
     while true{
@@ -436,9 +437,9 @@ pub mod butterfingersd_identify {
                                     continue;
                                 },
                             };
-                            let result = manual_attendance(&emp_id).await;
+                            let result = manual_attendance(&emp_id);
                             if result.is_ok() {
-                                println!("Attendance manually recorded for {}", employee_name_from_empid(&emp_id).await);
+                                println!("Attendance manually recorded for {}", employee_name_from_empid(&emp_id));
                                 number_of_tries = 0;
                                 break;
                             } else {
@@ -471,10 +472,10 @@ pub mod butterfingersd_identify {
                             //print the uuid of the fingerprint
                             println!("UUID of the fingerprint: {}", uuid);
                             //call record_attendance function (non-manual attendance)
-                            let result = record_attendance(&uuid).await;
+                            let result = record_attendance(&uuid);
                             if result.is_ok() { //if nothing wrong happened with record_attendance function
                                 //show that attendance was recorded for "employee name"
-                                println!("Attendance recorded for {}", employee_name_from_uuid(&uuid).await);
+                                println!("Attendance recorded for {}", employee_name_from_uuid(&uuid));
                                 //reset number of tries
                                 number_of_tries = 0;
                             } else { //if something wrong happened with record_attendance function
@@ -501,69 +502,97 @@ pub mod butterfingersd_identify {
     
     //async fn 
     
-    async fn record_attendance(uuid: &str) -> Result<(), Box<dyn std::error::Error>> {
+    fn record_attendance(uuid: &str) -> Result<(), Box<dyn std::error::Error>> {
         //setup involving the .env file
         dotenvy::dotenv()?;
-        //connect to the database
-        let pool = MySqlPool::connect(&env::var("DATABASE_URL")?).await?;
-        //query the record_attendance stored procedure (non-manual attendance)
-        let result = sqlx::query!("CALL record_attendance(?)", uuid)
-            .execute(&pool) //execute the query
-            .await?; //wait for the query to finish (some asynchronous programming shenanigans)
-        //if the query was successful
-        if result.rows_affected() > 0 {
-            println!("Attendance recorded"); //print that the attendance was recorded
-        }
-        pool.close().await; //close connection to database
+
+        let rt = Runtime::new().expect("Failed to create Tokio runtime");
+            rt.block_on(async {
+            //connect to the database
+            let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap()).await.unwrap();
+            //query the record_attendance stored procedure (non-manual attendance)
+            let result = sqlx::query!("CALL record_attendance(?)", uuid)
+                .execute(&pool) //execute the query
+                .await //wait for the query to finish (some asynchronous programming shenanigans)
+                .unwrap();
+            //if the query was successful
+            if result.rows_affected() > 0 {
+                println!("Attendance recorded"); //print that the attendance was recorded
+            }
+            pool.close().await; //close connection to database
+        });
+
         Ok(()) //return from the function with no errors
     }
     
-    async fn manual_attendance(emp_id: &u64) -> Result<(), Box<dyn std::error::Error>> {
+    fn manual_attendance(emp_id: &u64) -> Result<(), Box<dyn std::error::Error>> {
         //setup involving the .env file
         dotenvy::dotenv()?;
+
         //connect to the database
-        let pool = MySqlPool::connect(&env::var("DATABASE_URL")?).await?;
-        //query the record_attendance_by_empid stored procedure (manual attendance)
-        let result = sqlx::query!("CALL record_attendance_by_empid(?)", emp_id)
-            .execute(&pool)//execute the query
-            .await?; //wait for the query to finish (some asynchronous programming shenanigans)
-        //if the query was successful
-        if result.rows_affected() > 0 {
-            println!("Attendance manually recorded"); //print that the attendance was recorded
-        }
-        pool.close().await; //close connection to database
+        let rt = Runtime::new().expect("Failed to create Tokio runtime");
+            rt.block_on(async {
+            let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap()).await.unwrap();
+            //query the record_attendance_by_empid stored procedure (manual attendance)
+            let result = sqlx::query!("CALL record_attendance_by_empid(?)", emp_id)
+                .execute(&pool)//execute the query
+                .await
+                .unwrap(); //wait for the query to finish (some asynchronous programming shenanigans)
+            //if the query was successful
+            if result.rows_affected() > 0 {
+                println!("Attendance manually recorded"); //print that the attendance was recorded
+            }
+            pool.close().await; //close connection to database
+        });
+
         Ok(()) //return from the function with no errors
     }
     
-    async fn employee_name_from_uuid(uuid: &str) -> String {
+    fn employee_name_from_uuid(uuid: &str) -> String {
         dotenvy::dotenv().unwrap();
-        let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap()).await.unwrap();
-        let result = sqlx::query!(r#"SELECT enrolled_fingerprints.fprint_uuid AS "uuid", employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" 
-        FROM enrolled_fingerprints JOIN employee USING(emp_id) WHERE fprint_uuid = ?"#, uuid)
-            .fetch_one(&pool)
-            .await
-            .expect("Could not retrieve employee name from uuid");
-        pool.close().await;
-        match (result.fname, result.mname, result.lname) {
-            (fname, Some(mname), lname) => format!("{} {} {}", fname, mname, lname),
-            (fname, None, lname) => format!("{} {}", fname, lname),
-        }
+
+        let mut emp_name = String::new();
+
+        let rt = Runtime::new().expect("Failed to create Tokio runtime");
+            rt.block_on(async {
+            let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap()).await.unwrap();
+            let result = sqlx::query!(r#"SELECT enrolled_fingerprints.fprint_uuid AS "uuid", employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" 
+            FROM enrolled_fingerprints JOIN employee USING(emp_id) WHERE fprint_uuid = ?"#, uuid)
+                .fetch_one(&pool)
+                .await
+                .expect("Could not retrieve employee name from uuid");
+            pool.close().await;
+            match (result.fname, result.mname, result.lname) {
+                (fname, Some(mname), lname) => emp_name = format!("{} {} {}", fname, mname, lname),
+                (fname, None, lname) => emp_name = format!("{} {}", fname, lname),
+            }
+        });
+
+        emp_name
     }
     
-    async fn employee_name_from_empid(emp_id: &u64) -> String {
+    fn employee_name_from_empid(emp_id: &u64) -> String {
         dotenvy::dotenv().unwrap();
-        let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap()).await.unwrap();
-        let result = sqlx::query!(//r#"SELECT production_staff.emp_id AS "emp_id", 
-        //employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" FROM production_staff JOIN employee USING(emp_id) WHERE emp_id = ?"#, emp_id)
-            r#"SELECT employee.emp_id AS "emp_id", employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" FROM employee WHERE role_code = 2 AND emp_id = ?"#, emp_id)
-            .fetch_one(&pool)
-            .await
-            .expect("Could not retrieve employee name from employee id");
-        pool.close().await;
-        match (result.fname, result.mname, result.lname) {
-            (fname, Some(mname), lname) => format!("{} {} {}", fname, mname, lname),
-            (fname, None, lname) => format!("{} {}", fname, lname),
-        }
+
+        let mut emp_name = String::new();
+        
+        let rt = Runtime::new().expect("Failed to create Tokio runtime");
+            rt.block_on(async {
+            let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap()).await.unwrap();
+            let result = sqlx::query!(//r#"SELECT production_staff.emp_id AS "emp_id", 
+            //employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" FROM production_staff JOIN employee USING(emp_id) WHERE emp_id = ?"#, emp_id)
+                r#"SELECT employee.emp_id AS "emp_id", employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" FROM employee WHERE role_code = 2 AND emp_id = ?"#, emp_id)
+                .fetch_one(&pool)
+                .await
+                .expect("Could not retrieve employee name from employee id");
+            pool.close().await;
+            match (result.fname, result.mname, result.lname) {
+                (fname, Some(mname), lname) => format!("{} {} {}", fname, mname, lname),
+                (fname, None, lname) => format!("{} {}", fname, lname),
+            }
+        });
+
+        emp_name
     }
     
     //function below is a callback function that is called when a scanned fingerprint is matched with previously enrolled fingerprints

@@ -1,14 +1,13 @@
-use std::env;
+use std::{env, thread};
 use std::io::{self, Write};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use butterfingers::{butterfingersd_enroll, butterfingersd_identify, identify};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use serde_json::json;
 use serde::Deserialize;
 use tokio::sync::Mutex;
-use butterfingersd_enroll::enroll;
-use butterfingersd_identify::identify;
 /*
 Algorithm:
 
@@ -80,11 +79,14 @@ async fn to_butterfingers() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("Error handling client: {}", e);
             }
         });
+        // thread::spawn(move || {
+        //     handle_client(client, mode_clone)
+        // });
     }
 }
 #[derive(Deserialize, Debug)]
 struct ConnectionMessage {
-	fingerprint_mode: String,
+	fingerprintMode: String,
 	emp_id: Option<u64>
 }
 //response types:
@@ -107,8 +109,8 @@ async fn handle_client(mut client: TcpStream, mode: Arc<Mutex<String>>) -> Resul
     let c_msg: ConnectionMessage = serde_json::from_str(&msg_from_client).unwrap();
 	//println!("Passed message processing");
     println!("[*] Received: {}", msg_from_client);
-	let mut response;
-	if c_msg.fingerprint_mode == "disconnect"{
+	let response;
+	if c_msg.fingerprintMode == "disconnect"{
 		//destroy co-routine
 		//close fp device here
 		*curr_mode = "none".to_string();
@@ -122,9 +124,9 @@ async fn handle_client(mut client: TcpStream, mode: Arc<Mutex<String>>) -> Resul
             		"responseType": 2,
             		"responseMsg" : "Another procedure is using the scanner!"
         	});
-	} else if *curr_mode == "none" && c_msg.fingerprint_mode == "enroll" {
+	} else if *curr_mode == "none" && c_msg.fingerprintMode == "enroll" {
 		//call enroll and pass fpdevice handle and emp id
-		if(c_msg.emp_id == None){
+		if c_msg.emp_id.is_none() {
 			response = json!({
             			"responseType": 2,
             			"responseMsg" : "Employee ID not specified!"
@@ -137,9 +139,11 @@ async fn handle_client(mut client: TcpStream, mode: Arc<Mutex<String>>) -> Resul
         		});
 		}
 		
-	} else if *curr_mode == "none" && c_msg.fingerprint_mode == "identify" {
+	} else if *curr_mode == "none" && c_msg.fingerprintMode == "identify" {
 		//call identify and pass fpdevice handle
 		*curr_mode = "identify".to_string();
+        identify().await;
+        //identify().await;
 		response = json!({
             		"responseType": 0,
             		"responseMsg" : "Attendance mode started."
