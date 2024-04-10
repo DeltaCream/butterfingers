@@ -1,3 +1,4 @@
+use std::thread::JoinHandle;
 use std::{env, thread};
 use std::io::{self, Write};
 use std::net::SocketAddr;
@@ -7,7 +8,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use serde_json::json;
 use serde::Deserialize;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 /*
 Algorithm:
 
@@ -55,6 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn to_butterfingers() -> Result<(), Box<dyn std::error::Error>> {
     let curr_mode = Arc::new(Mutex::new(String::from("none")));
     //declare fp device here but not open it
+    let thread_handle: Arc<Mutex<Option<thread::JoinHandle<()>>>> = Arc::new(Mutex::new(None));
 
     dotenvy::dotenv()?;
     let listen_host = env::var("LISTEN_HOST")?;
@@ -71,11 +73,13 @@ async fn to_butterfingers() -> Result<(), Box<dyn std::error::Error>> {
     
     loop {
         let (client, addr) = server.accept().await.unwrap();
+        //let (tx, rx) = mpsc::channel(5);
         println!("[*] Accepted Connection from {}", addr);
         let mode_clone = curr_mode.clone();
+        let thread_clone = thread_handle.clone();
         //pass fpdevice here
         tokio::spawn(async move {
-            if let Err(e) = handle_client(client, mode_clone).await {
+            if let Err(e) = handle_client(client, thread_clone).await {
                 eprintln!("Error handling client: {}", e);
             }
         });
@@ -96,9 +100,11 @@ struct ConnectionMessage {
 //type 3 - plain message to identify mode
 //type 4 - plain message to enroll mode
 //static mut currMode: Option<String> = None;
-async fn handle_client(mut client: TcpStream, mode: Arc<Mutex<String>>) -> Result<(), Box<dyn std::error::Error>> { //handle client function
-    let mut curr_mode = mode.lock().await;
-    println!("current mode before handler: {}", *curr_mode);
+async fn handle_client(mut client: TcpStream, handle: Arc<Mutex<Option<JoinHandle<()>>>>) -> Result<(), Box<dyn std::error::Error>> { //handle client function
+    //let mut curr_mode = mode.lock().await;
+    //println!("current mode before handler: {}", *curr_mode);
+    let handle_inner = handle.lock().await;
+    
     println!("Inside client handler");
     let mut buffer = [0; 1024]; //buffer for 1024 bytes
     println!("Passed buffer");
@@ -118,7 +124,8 @@ async fn handle_client(mut client: TcpStream, mode: Arc<Mutex<String>>) -> Resul
             		"responseType": 1,
             		"responseMsg" : "Disconnection successful."
         	});
-    	} else if *curr_mode != "none"{ //if device is open, send error
+    	//} else if *curr_mode != "none"{ //if device is open, send error
+        } else if handle_inner.is_
   
         	response = json!({
             		"responseType": 2,
@@ -142,8 +149,11 @@ async fn handle_client(mut client: TcpStream, mode: Arc<Mutex<String>>) -> Resul
 	} else if *curr_mode == "none" && c_msg.fingerprintMode == "identify" {
 		//call identify and pass fpdevice handle
 		*curr_mode = "identify".to_string();
-        identify().await;
         //identify().await;
+        //identify().await;
+        thread::spawn(|| {
+            identify(); 
+        });
 		response = json!({
             		"responseType": 0,
             		"responseMsg" : "Attendance mode started."
