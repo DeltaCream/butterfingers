@@ -1,6 +1,3 @@
-pub use butterfingersd_enroll::enroll as enroll;
-pub use butterfingersd_verify::verify as verify;
-
 pub mod butterfingersd_enroll {
     use std::{
         env, 
