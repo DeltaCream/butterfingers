@@ -10,7 +10,6 @@ pub mod butterfingersd_enroll {
     };
     
     use libfprint_rs::{
-        FpContext, 
         FpPrint, 
         FpDevice,
     };
@@ -27,23 +26,12 @@ pub mod butterfingersd_enroll {
         Cell,
     };
     
-    /*  algorithm:
-        check for any unenrolled employees
-        create a table showing which employees are unenrolled
-        prompt user to select an employee
-        open fingerprint scanner
-        scan fingerprint
-        enroll fingerprint
-        store fingerprint in database
-        close fingerprint scanner
-    */
-    
     //#[tokio::main]
-    pub async fn enroll() { //entry point of the program
-        enroll_employee().await.unwrap();
+    pub async fn enroll(fp_scanner: &FpDevice) { //entry point of the program
+        enroll_employee(fp_scanner).await.unwrap();
     }
     
-    async fn enroll_employee() -> anyhow::Result<()> { //list employees which are candidates for enrollment
+    async fn enroll_employee(fp_scanner: &FpDevice) -> anyhow::Result<()> { //list employees which are candidates for enrollment
     
         dotenvy::dotenv()?;
         let pool = MySqlPool::connect(&env::var("DATABASE_URL")?).await?; 
@@ -85,13 +73,13 @@ pub mod butterfingersd_enroll {
         }
         // Print the table to the command line
         table.printstd();
-    
-        println!("Please enter the row number corresponding to the Employee you would like to enroll: "); //take input
+
         let mut line = String::new();
         let row_num;
     
-        loop { //while (true)
+        'outer : loop { //while (true)
             //read input
+            println!("Please enter the row number corresponding to the Employee you would like to enroll: "); //take input
             io::stdin().read_line(&mut line).expect("Input should be read here");        
             if let Ok(num) = line.trim().parse::<usize>() {
                 if result.get(num).is_some() { //get returns Some if the row exists
@@ -102,6 +90,16 @@ pub mod butterfingersd_enroll {
                 }
             } else { //parse returns an error, will not allow negative numbers (as negative rows do not exist in the table)
                 println!("Invalid input, please try again");
+                'inner : loop {
+                    println!("Do you want to continue with the program? (y/n)");
+                    let mut cont = String::new();
+                    io::stdin().read_line(&mut cont).unwrap();
+                    match cont.trim() {
+                        "y" => break 'inner,
+                        "n" => std::process::exit(0),
+                        _ => continue 'inner,
+                    }
+                }
             }
             line.clear()
         }
@@ -112,12 +110,7 @@ pub mod butterfingersd_enroll {
     
         //generates a random uuid
         let uuid = Uuid::new_v4();
-    
-        //enroll fingerprint
-        let context = FpContext::new();
-        let devices = context.devices();
-        let fp_scanner = devices.first().expect("Devices could not be retrieved");
-    
+
         // println!("{:#?}", fp_scanner.scan_type()); //print the scan type of the device (for debugging purposes)
         // println!("{:#?}", fp_scanner.features());  //print the features of the device (for debugging purposes)
     
@@ -225,51 +218,16 @@ pub mod butterfingersd_verify {
     };
     
     use libfprint_rs::{
-        FpContext,
-        FpPrint,
-        FpDevice,
+        Cancellable, FpDevice, FpPrint
     };
     
     use sqlx::MySqlPool;
     
-    /* Harlan's initial algorithm
-    while true{
-        scan for finger
-        select the uuid of finger
-        check if uuid exists in db
-        if exists, call record_attendance(uuid)
-        else error
-    }
-    */
-    
-    
-    /* Final working algorithm with details
-    loop {
-        check if manual attendance is needed based on the number of tries
-        if yes,
-            call manual_attendance
-        else
-            scan finger
-            select uuid
-            check if uuid exists in db
-            SELECT emp_id from employee where uuid = ?, uuid.to_string()
-            if exists, call record_attendance(uuid)
-                else println!("Fingerprint does not exist in the database")
-    }
-    */
-    
     //#[tokio::main]
-    pub async fn verify() {
-        //Get FpContext to get devices
-        let context = FpContext::new();
-        //Use FpContext to get devices (returns a vector/array of devices)
-        let devices = context.devices();
-        //Get the first device (which, in this case, is the only device, and it is the fingerprint scanner)
-        let fp_scanner = devices.first().expect("Devices could not be retrieved");
-        
+    pub async fn verify(fp_scanner: &FpDevice) {
         //Open the fingerprint scanner
         fp_scanner.open_sync(None).expect("Device could not be opened");
-    
+
         // Get a list of all entries in the folder
         let entries = fs::read_dir(dirs::home_dir()
                                                     .expect("Home directory could not be found")
@@ -315,19 +273,19 @@ pub mod butterfingersd_verify {
             deserialized_print.expect("Could not unwrap the deserialized print") //let enrolled_print = deserialized_print.expect("Could not unwrap the deserialized print");
         }).collect::<Vec<FpPrint>>();
     
-        for (i, fingerprint) in fingerprints.iter().enumerate() {
-            //print the fingeprint number (on the array of fingerprints returned) and its corresponding username
-            println!("Username for Fingerprint #{}: {:?}", i, fingerprint.username().expect("Fingerprint username could not be retrieved"));
-        }
+        // for (i, fingerprint) in fingerprints.iter().enumerate() {
+        //     //print the fingeprint number (on the array of fingerprints returned) and its corresponding username
+        //     println!("Username for Fingerprint #{}: {:?}", i, fingerprint.username().expect("Fingerprint username could not be retrieved"));
+        // }
     
         //print that the fingerprints are retrieved (for debugging purposes, commented out on production)
-        println!("Fingerprints retrieved");
+        //println!("Fingerprints retrieved");
     
         let mut number_of_tries = 0;
     
-        loop { //equivalent to while(true)
+        'outer : loop { //equivalent to while(true)
             if number_of_tries >= 3 { //if condition for manual attendance is satisfied
-                loop {
+                'inner : loop {
                     println!("Please manually enroll the employee's attendance");
                     println!("What is the employee's id?");
                     let mut buffer = String::new();
@@ -337,7 +295,30 @@ pub mod butterfingersd_verify {
                                 Ok(num) => num,
                                 Err(_) => {
                                     println!("Error: employee id could not be read");
-                                    continue;
+                                    loop {
+                                        println!("Do you still want to continue with the manual attendance? (y/n)");
+                                        let mut buffer = String::new();
+                                        match io::stdin().read_line(&mut buffer) {
+                                            Ok(_) => {
+                                                match buffer.trim().to_lowercase().as_str() {
+                                                    "y" => {
+                                                        continue 'inner;
+                                                    },
+                                                    "n" => {
+                                                        break 'outer;
+                                                    },
+                                                    _ => {
+                                                        println!("Invalid input, please try again");
+                                                        continue;
+                                                    }
+                                                }
+                                            }
+                                            Err(_) => {
+                                                println!("Invalid input, please try again");
+                                                continue;
+                                            }
+                                        }
+                                    }
                                 },
                             };
                             let result = manual_attendance(&emp_id).await;
@@ -346,7 +327,7 @@ pub mod butterfingersd_verify {
                                 number_of_tries = 0;
                                 break;
                             } else {
-                                println!("Attendance could not be recorded");
+                                println!("Attendance could not be manually recorded");
                             }
                         },
                         Err(_error) => {
@@ -364,7 +345,12 @@ pub mod butterfingersd_verify {
                 println!("Please scan your fingerprint");
     
                 //identify the scanned fingerprint from the list of fingerprints that were previously stored from enrollment
-                let print_identified = fp_scanner.identify_sync(&fingerprints, None, Some(match_cb), None, Some(&mut new_print)).expect("Fingerprint could not be identified due to an error");
+                let cancel = Cancellable::new();
+
+                let print_identified = match fp_scanner.identify_sync(&fingerprints, Some(&cancel), Some(match_cb), None, Some(&mut new_print)) {//.expect("Fingerprint could not be identified due to an error");
+                    Ok(result) => result,
+                    Err(_) => None,
+                };
                 
                 if print_identified.is_some() { //if print_identified identified a fingerprint
                     let fprint = print_identified.expect("Print could not be unwrapped");
@@ -388,7 +374,10 @@ pub mod butterfingersd_verify {
                                 number_of_tries += 1;
                             }
                         },
-                        None => println!("UUID could not be retrieved"), //uuid did not contain a string (essentially None acts as a null value)
+                        None => {
+                            println!("UUID could not be retrieved"); //uuid did not contain a string (essentially None acts as a null value)
+                            number_of_tries += 1;
+                        }
                     }
                     //println!("UUID of the fingerprint: {}", uuid);
                 } else { //print_identified did not identify a fingerprint
@@ -396,8 +385,8 @@ pub mod butterfingersd_verify {
                     number_of_tries += 1;
                 }
             }
-            
         }
+        fp_scanner.close_sync(None).expect("Could not close fingerprint scanner");
     }
     
     //async fn 

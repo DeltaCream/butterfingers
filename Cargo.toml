@@ -53,6 +53,6 @@ edition = "2021"
 #path = "butterfingersd-verify/src/main.rs"
 
 [[bin]]
-name = "butterfingersd"
+name = "butterfingers"
 path = "src/main.rs"
 
