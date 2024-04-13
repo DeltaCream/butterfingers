@@ -23,5 +23,5 @@ async function startEventListener(){
       $("#result-body").text(event.payload);
     });
     console.log(window.unlisten);
-    await invoke("start_identify");
+    // await invoke("start_identify");
 }

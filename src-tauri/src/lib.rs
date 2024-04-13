@@ -259,20 +259,22 @@ pub mod butterfingersd_verify {
     */
     
     //#[tokio::main]
-    pub fn verify(window: Window) {
+    pub async fn verify(window: Window) {//, fp_scanner: FpDevice) {
         println!("entering verify mode!");
-        window.emit("identify-messages","entering verify mode!");
-        //Get FpContext to get devices
+
         let context = FpContext::new();
-        //Use FpContext to get devices (returns a vector/array of devices)
-        let devices = context.devices();
-        //Get the first device (which, in this case, is the only device, and it is the fingerprint scanner)
-        
-        let fp_scanner = devices.first().expect("Devices could not be retrieved");
+        let mut devices = context.devices();
+        //let fp_scanner = devices.first().expect("Devices could not be retrieved");
+        let fp_scanner = devices.remove(0);
+        fp_scanner.open_sync(None).expect("Device could not be opened");
+
+        window.emit("identify-messages","entering verify mode!");
         
         //Open the fingerprint scanner
-        fp_scanner.open_sync(None).expect("Device could not be opened");
-    
+        println!("Opening fingerprint scanner...");
+        // fp_scanner.open_sync(None).expect("Device could not be opened. Please try plugging in your fingerprint scanner.");
+        println!("Fingerprint scanner opened!");
+
         // Get a list of all entries in the folder
         let entries = fs::read_dir(dirs::home_dir()
                                                     .expect("Home directory could not be found")
@@ -327,7 +329,7 @@ pub mod butterfingersd_verify {
         println!("Fingerprints retrieved");
     
         let mut number_of_tries = 0;
-        let rt = Runtime::new().expect("Failed to create Tokio runtime");
+        // let rt = Runtime::new().expect("Failed to create Tokio runtime");
         loop { //equivalent to while(true)
             if number_of_tries >= 3 { //if condition for manual attendance is satisfied
                 loop {
@@ -343,7 +345,7 @@ pub mod butterfingersd_verify {
                                     continue;
                                 },
                             };
-                            rt.block_on(async{
+                            // rt.block_on(async{
                                 let result = manual_attendance(&emp_id).await;
                                 if result.is_ok() {
                                     println!("Attendance manually recorded for {}", employee_name_from_empid(&emp_id).await);
@@ -352,7 +354,7 @@ pub mod butterfingersd_verify {
                                 } else {
                                     println!("Attendance could not be recorded");
                                 }
-                            });
+                            // });
                             
                         },
                         Err(_error) => {
@@ -364,14 +366,15 @@ pub mod butterfingersd_verify {
                 //println!("Before new_print declaration"); //for debugging purposes
     
                 // The variable that will hold the new fingerprint
-                let mut new_print = FpPrint::new(fp_scanner);
+                let mut new_print = FpPrint::new(&fp_scanner);
     
                 //prompt for the user to scan their fingerprint
                 println!("Please scan your fingerprint");
                 let _ = window.emit("identify-messages", "Please scan your fingerprint");
                 //identify the scanned fingerprint from the list of fingerprints that were previously stored from enrollment
+                println!("Before identify_sync call");
                 let print_identified = fp_scanner.identify_sync(&fingerprints, None, Some(match_cb), None, Some(&mut new_print)).expect("Fingerprint could not be identified due to an error");
-                
+                println!("After identify_sync call");
                 if print_identified.is_some() { //if print_identified identified a fingerprint
                     let fprint = print_identified.expect("Print could not be unwrapped");
                     //retrieves the username of the fingerprint (remember that the username is part of the fingerprint's metadata)
@@ -381,7 +384,8 @@ pub mod butterfingersd_verify {
                             //print the uuid of the fingerprint
                             println!("UUID of the fingerprint: {}", uuid);
                             //call record_attendance function (non-manual attendance)
-                            rt.block_on(async{
+                            // rt.block_on(async{
+                                println!("Before recording attendance");
                                 let result = record_attendance(&uuid).await;
                                 if result.is_ok() { //if nothing wrong happened with record_attendance function
                                     //show that attendance was recorded for "employee name"
@@ -398,7 +402,7 @@ pub mod butterfingersd_verify {
                                     //increment number of tries, possibly resulting to manual attendance in the next iteration of the loop
                                     number_of_tries += 1;
                                 }
-                            });
+                            // });
                         },
                         None => println!("UUID could not be retrieved"), //uuid did not contain a string (essentially None acts as a null value)
                     }
@@ -417,6 +421,7 @@ pub mod butterfingersd_verify {
     
     async fn record_attendance(uuid: &str) -> Result<(), Box<dyn std::error::Error>> {
         //setup involving the .env file
+        println!("recording attendance");
         dotenvy::dotenv()?;
         //connect to the database
         let pool = MySqlPool::connect(&env::var("DATABASE_URL")?).await?;
