@@ -14,7 +14,7 @@ use std::{
 use libfprint_rs::{FpContext, FpDevice, FpPrint};
 
 use sqlx::MySqlPool;
-use tokio::{runtime::Runtime,};
+use tokio::runtime::{Builder, Runtime};
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -151,19 +151,24 @@ fn start_identify(device: State<Note>) -> Option<String> {
         let uuid = fprint.username();
         match uuid {
             Some(uuid) => {
-                let uuid_2 = uuid.clone();
-                std::thread::spawn( move || {
-                    let rt = Runtime::new().expect("Failed to create Tokio runtime");
-                    rt.block_on(async{ 
+                //let uuid_2 = uuid.clone();
+                // std::thread::spawn( move || {
+                    //let rt  = Runtime::new().unwrap();
+                    //let local = tokio::task::LocalSet::new();
+                    //local.run_until( async { 
                     // tauri::async_runtime::block_on( async {
-                        println!("UUID of the fingerprint: {}", uuid_2);
+                    //let runtime = Builder::new();
+                    //thread::spawn( async || {
+                    //Runtime::new().unwrap().block_on(async {
+                    smol::block_on(async {
+                        println!("UUID of the fingerprint: {}", uuid);
                         println!("Before recording attendance");
-                        let result = record_attendance(&uuid_2).await;
+                        let result = record_attendance(&uuid).await;
                         if result.is_ok() {
-                            let msg = format!(
-                                "Attendance recorded for {}\n",
-                                employee_name_from_uuid(&uuid_2).await
-                            );
+                                let msg = format!(
+                                    "Attendance recorded for {}\n",
+                                    employee_name_from_uuid(&uuid).await
+                                );
                             println!("{}", msg);
                             fun_result = Some(msg);
                         } else {
@@ -172,9 +177,9 @@ fn start_identify(device: State<Note>) -> Option<String> {
                             fun_result = Some(String::from("Attendance could not be recorded"));
                             //increment number of tries, possibly resulting to manual attendance in the next iteration of the loop
                         }
-                    });
-                }).join().expect("Thread panicked");
-            }
+                     });
+                // }).join().expect("Thread panicked");
+            },
             None => {
                 println!("UUID could not be retrieved"); //uuid did not contain a string (essentially None acts as a null value)
                 fun_result = Some(String::from("UUID could not be retrieved"));
