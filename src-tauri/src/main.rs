@@ -18,14 +18,25 @@ fn start_identify(window: Window){
         // thread code
         //;
         println!("starting verify!");
-        let result1 = window.emit("identify-messages", "starting verify!");
-        println!("{}", result1.is_ok());
+        let _ = window.emit("identify-messages", "starting verify!");
+        //println!("{}", result1.is_ok());
         // tauri::async_runtime::spawn(async move {
             
         // });
         // tokio::spawn(async {
         //     let _ = verify();
         // });
+        // let id = window.listen("manual-attendance", |event| {
+        //     //println!("got event-name with payload {:?}", event.payload());
+        //     println!("value: {}", event.payload().unwrap());
+        //     if event.payload().eq(&Some("\"1234\"")){
+        //         println!("right value!"); 
+        //         window.unlisten(handler_id);
+        //     } else {
+        //         println!("wrong value!");
+        //     }
+        // });
+        
         thread::spawn( || {
             let _ = verify(window);
         });

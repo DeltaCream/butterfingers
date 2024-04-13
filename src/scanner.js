@@ -15,7 +15,7 @@ window.addEventListener("beforeunload", () =>{
 });
 
 async function greet(){
-  await invoke("start_identify");
+  emit('manual-attendance',emp_id.value);
 }
 async function startEventListener(){
     window.unlisten = await listen('identify-messages', (event) => {
