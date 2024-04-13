@@ -216,9 +216,7 @@ pub mod butterfingersd_enroll {
 
 pub mod butterfingersd_verify {
     use std::{
-        env,
-        fs::{self, OpenOptions},
-        io::{self, BufReader, Read}
+        env, fmt::format, fs::{self, OpenOptions}, io::{self, BufReader, Read}
     };
     
     use libfprint_rs::{
@@ -228,7 +226,12 @@ pub mod butterfingersd_verify {
     };
     
     use sqlx::MySqlPool;
-    
+    use tauri::{App, AppHandle, Manager, Window};
+    use tokio::runtime::Runtime;
+    #[derive(Clone, serde::Serialize)]
+    struct Payload {
+        message: String,
+    }
     /* Harlan's initial algorithm
     while true{
         scan for finger
@@ -256,12 +259,15 @@ pub mod butterfingersd_verify {
     */
     
     //#[tokio::main]
-    pub async fn verify() {
+    pub fn verify(window: Window) {
+        println!("entering verify mode!");
+        window.emit("identify-messages","entering verify mode!");
         //Get FpContext to get devices
         let context = FpContext::new();
         //Use FpContext to get devices (returns a vector/array of devices)
         let devices = context.devices();
         //Get the first device (which, in this case, is the only device, and it is the fingerprint scanner)
+        
         let fp_scanner = devices.first().expect("Devices could not be retrieved");
         
         //Open the fingerprint scanner
@@ -272,7 +278,7 @@ pub mod butterfingersd_verify {
                                                     .expect("Home directory could not be found")
                                                     .join("print/"))
                                     .expect("Could not read the directory");
-    
+        
         // Extract the filenames from the directory entries and store them in a vector
         let file_names: Vec<String> = entries
             .filter_map(|entry| {
@@ -321,7 +327,7 @@ pub mod butterfingersd_verify {
         println!("Fingerprints retrieved");
     
         let mut number_of_tries = 0;
-    
+        let rt = Runtime::new().expect("Failed to create Tokio runtime");
         loop { //equivalent to while(true)
             if number_of_tries >= 3 { //if condition for manual attendance is satisfied
                 loop {
@@ -337,14 +343,17 @@ pub mod butterfingersd_verify {
                                     continue;
                                 },
                             };
-                            let result = manual_attendance(&emp_id).await;
-                            if result.is_ok() {
-                                println!("Attendance manually recorded for {}", employee_name_from_empid(&emp_id).await);
-                                number_of_tries = 0;
-                                break;
-                            } else {
-                                println!("Attendance could not be recorded");
-                            }
+                            rt.block_on(async{
+                                let result = manual_attendance(&emp_id).await;
+                                if result.is_ok() {
+                                    println!("Attendance manually recorded for {}", employee_name_from_empid(&emp_id).await);
+                                    number_of_tries = 0;
+                                    return;
+                                } else {
+                                    println!("Attendance could not be recorded");
+                                }
+                            });
+                            
                         },
                         Err(_error) => {
                             println!("Error: employee id could not be read");
@@ -359,7 +368,7 @@ pub mod butterfingersd_verify {
     
                 //prompt for the user to scan their fingerprint
                 println!("Please scan your fingerprint");
-    
+                let _ = window.emit("identify-messages", "Please scan your fingerprint");
                 //identify the scanned fingerprint from the list of fingerprints that were previously stored from enrollment
                 let print_identified = fp_scanner.identify_sync(&fingerprints, None, Some(match_cb), None, Some(&mut new_print)).expect("Fingerprint could not be identified due to an error");
                 
@@ -372,24 +381,31 @@ pub mod butterfingersd_verify {
                             //print the uuid of the fingerprint
                             println!("UUID of the fingerprint: {}", uuid);
                             //call record_attendance function (non-manual attendance)
-                            let result = record_attendance(&uuid).await;
-                            if result.is_ok() { //if nothing wrong happened with record_attendance function
-                                //show that attendance was recorded for "employee name"
-                                println!("Attendance recorded for {}\n", employee_name_from_uuid(&uuid).await);
-                                //reset number of tries
-                                number_of_tries = 0;
-                            } else { //if something wrong happened with record_attendance function
-                                //show that attendance could not be recorded
-                                println!("Attendance could not be recorded\n");
-                                //increment number of tries, possibly resulting to manual attendance in the next iteration of the loop
-                                number_of_tries += 1;
-                            }
+                            rt.block_on(async{
+                                let result = record_attendance(&uuid).await;
+                                if result.is_ok() { //if nothing wrong happened with record_attendance function
+                                    //show that attendance was recorded for "employee name"
+                                    let msg = format!("Attendance recorded for {}\n", employee_name_from_uuid(&uuid).await);
+                                    println!("{}",msg);
+                                    let _ = window.emit("identify-messages", msg);
+                                    //let _ = handle.emit_all("identify-messages",  Payload { message: msg }).unwrap();
+                                    //reset number of tries
+                                    number_of_tries = 0;
+                                } else { //if something wrong happened with record_attendance function
+                                    //show that attendance could not be recorded
+                                    println!("Attendance could not be recorded\n");
+                                    let _ = window.emit("identify-messages", "Attendance could not be recorded");
+                                    //increment number of tries, possibly resulting to manual attendance in the next iteration of the loop
+                                    number_of_tries += 1;
+                                }
+                            });
                         },
                         None => println!("UUID could not be retrieved"), //uuid did not contain a string (essentially None acts as a null value)
                     }
                     //println!("UUID of the fingerprint: {}", uuid);
                 } else { //print_identified did not identify a fingerprint
                     println!("No matching fingerprint could be found");
+                    let _ = window.emit("identify-messages", "No matching fingerprint could be found");
                     number_of_tries += 1;
                 }
             }
