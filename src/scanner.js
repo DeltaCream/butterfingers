@@ -30,7 +30,7 @@ async function start_identify() {
       resultString.textContent = "<span class=\"success\">Attendance Recorded!</span>";
 
       // change data
-      document.querySelector("#employee-image").src = "https://localhost/attendance/images/" + data[0];
+      document.querySelector("#employee-image").src = "http://192.168.254.191/attendance/images/" + data[0];
       document.querySelector("#employee").textContent = "<span class=\"success\">" + data[1] + " " + data[2] + "</span>";
       document.querySelector("#employee-id").textContent = data[0];
       document.querySelector("#date").textContent = data[4];
@@ -65,8 +65,11 @@ async function start_identify() {
 let inputID = document.querySelector("#emp_id");
 async function manual_attendance() {
   try {
-    const emp_id = parseInt(inputID.value);
-    const response = await invoke("manual_attendance", { emp: emp_id });
+    const emp_id = inputID.value;
+    console.log("Before manual invoke");
+    console.log(inputID.value);
+    const response = await invoke("manual_attendance", { emp: emp_id }); //await invoke("manual_attendance", { emp: inputID.value });
+    console.log("After manual invoke");
     const result = JSON.parse(response);
 
     if (result && result.responsecode === "success") {
@@ -74,7 +77,7 @@ async function manual_attendance() {
       resultString.textContent = "<span class=\"success\">Attendance Recorded!</span>";
 
       // change data
-      document.querySelector("#employee-image").src = "https://localhost/attendance/images/" + data[0];
+      document.querySelector("#employee-image").src = "http://192.168.254.191/attendance/images/" + data[0];
       document.querySelector("#employee").textContent = "<span class=\"success\">" + data[1] + " " + data[2] + "</span>";
       document.querySelector("#employee-id").textContent = data[0];
       document.querySelector("#date").textContent = data[4];

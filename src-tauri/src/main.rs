@@ -31,6 +31,85 @@ struct Payload {
 }
 
 #[tauri::command]
+fn test_function(emp: u64) -> String {
+    println!("Entering test function");
+    let output = json!({
+        "responsecode" : "success",
+        "body" : emp,
+    }).to_string();
+    output
+}
+
+#[tauri::command]
+fn manual_attendance(emp: String) -> String {
+    println!("Entering manual attendance");
+    println!("Emp: {}", emp);
+
+    let emp = match emp.trim().parse::<u64>() {
+        Ok(num) => num,
+        Err(_) => return json!({
+            "responsecode" : "failure",
+            "body" : "Invalid employee ID",
+        }).to_string(),
+    };
+
+    let mut output: Value = Default::default();
+    let row = futures::executor::block_on(async {
+        query_record_attendance(&emp).await
+    });
+
+    if row.is_ok() {
+        let row = row.unwrap();
+        let row_emp_id = row.get::<u64, usize>(0);
+        let row_fname = row.get::<String, usize>(1);
+        let row_lname = row.get::<String, usize>(2);
+        let row_date = row.get::<time::Date, usize>(3).to_string();
+        let row_time = row.get::<time::Time, usize>(4).to_string();
+        let row_attendance_status = row.get::<u16, usize>(5);
+
+        output = json!({
+            "responsecode" : "success",
+            "body" : [
+                 row_emp_id,
+                 row_fname,
+                 row_lname,
+                 row_time,
+                 row_date,
+                 row_attendance_status,
+            ] 
+         });
+    } else {
+        output = json!({
+            "responsecode" : "failure",
+            "body" : "No record found",
+        });
+    }
+
+    output.to_string()
+}
+
+/*
+{
+    "responsecode": "success",
+    "body": [
+        row_emp_id,
+        row_fname,
+        row_lname,
+        row_time,
+        row_date,
+        row_attendance_status,
+    ]
+}
+*/
+
+/*
+{
+    "responsecode": "failure",
+    "body": "thingy",
+}
+*/
+
+#[tauri::command]
 fn start_identify(device: State<Note>) -> String {
     //let mut fun_result: Option<String> = Some(String::from(""));
     let mut fun_result: Value = Default::default();
@@ -154,15 +233,6 @@ fn start_identify(device: State<Note>) -> String {
         let uuid = fprint.username();
         match uuid {
             Some(uuid) => {
-                //let uuid_2 = uuid.clone();
-                // std::thread::spawn( move || {
-                //let rt  = Runtime::new().unwrap();
-                //let local = tokio::task::LocalSet::new();
-                //local.run_until( async {
-                // tauri::async_runtime::block_on( async {
-                //let runtime = Builder::new();
-                //thread::spawn( async || {
-                //Runtime::new().unwrap().block_on(async {
                 futures::executor::block_on(async {
                     println!("UUID of the fingerprint: {}", uuid);
                     println!("Before recording attendance");
@@ -196,27 +266,23 @@ fn start_identify(device: State<Note>) -> String {
                     } else {
                         //show that attendance could not be recorded
                         println!("Attendance could not be recorded\n");
-                        // fun_result = Some(String::from("Attendance could not be recorded"));
                         fun_result = json!({
                             "responsecode": "failure",
                             "body": "Attendance could not be recorded",
                         });
-                        //increment number of tries, possibly resulting to manual attendance in the next iteration of the loop
                     }
                 });
-                // }).join().expect("Thread panicked");
             },
             None => {
                 println!("UUID could not be retrieved"); //uuid did not contain a string (essentially None acts as a null value)
                 fun_result = json!({
                     "responsecode": "failure",
                     "body": "UUID could not be retrieved",
-                }); //Some(String::from("UUID could not be retrieved"));
+                });
             }
         }
     } else {
         println!("No matching fingerprint could be found");
-        // fun_result = Some(String::from("No matching fingerprint could be found"));
         fun_result = json!({
             "responsecode": "failure",
             "body": "No matching fingerprint could be found",
@@ -244,7 +310,7 @@ fn start_identify(device: State<Note>) -> String {
 }
 */
 
-async fn manual_attendance(emp_id: &u64) -> Result<(), Box<dyn std::error::Error>> {
+async fn query_record_attendance(emp_id: &u64) -> Result<MySqlRow, Box<dyn std::error::Error>> {
     //setup involving the .env file
     dotenvy::dotenv()?;
     //connect to the database
@@ -254,12 +320,29 @@ async fn manual_attendance(emp_id: &u64) -> Result<(), Box<dyn std::error::Error
         .execute(&pool) //execute the query
         .await?; //wait for the query to finish (some asynchronous programming shenanigans)
                  //if the query was successful
-    if result.rows_affected() > 0 {
-        println!("Attendance manually recorded"); //print that the attendance was recorded
-    }
+    // if result.rows_affected() > 0 {
+    //     println!("Attendance manually recorded"); //print that the attendance was recorded
+    // }
+    
+    let uuid_query = sqlx::query!("SELECT fprint_uuid from enrolled_fingerprints where emp_id = ?", emp_id)
+        .fetch_one(&pool)
+        .await
+        .expect("Could not retrieve uuid");
+        
+    let uuid = uuid_query.fprint_uuid;   //.get::<String, usize>(0);
+
+    println!("UUID: {}", uuid);
+
+    let row = sqlx::query!("CALL get_latest_attendance_record(?)", uuid)
+        .fetch_one(&pool)
+        .await
+        .expect("Could not retrieve latest attendance record");
+
     pool.close().await; //close connection to database
-    Ok(()) //return from the function with no errors
+    Ok(row) //return from the function with no errors
 }
+
+
 async fn employee_name_from_uuid(uuid: &str) -> String {
     dotenvy::dotenv().unwrap();
     let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap())
@@ -428,7 +511,7 @@ async fn main() {
     tauri::Builder::default()
         .setup(|_app| Ok(()))
         .manage(Note(Mutex::new(FpContext::new().devices().remove(0))))
-        .invoke_handler(tauri::generate_handler![greet, start_identify])
+        .invoke_handler(tauri::generate_handler![greet, start_identify, manual_attendance])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
