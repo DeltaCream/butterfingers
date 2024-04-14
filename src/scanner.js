@@ -86,6 +86,7 @@ async function manual_attendance() {
       }
 
       // popup employee window
+      showPopup();
 
       console.log("Response: " + JSON.stringify(data));
 
