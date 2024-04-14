@@ -7,22 +7,26 @@
     <link rel="stylesheet" type="text/css" href="/styles/scannedStyles.css" />
     <link rel="stylesheet" type="text/css" href="/styles/sharedStyles.css" />
     <script src="https://code.jquery.com/jquery-3.1.1.min.js"></script>
-    <script type="module" src="/scanner.js" defer></script>
+    <script type="text/javascript" src="/scanner.js" defer></script>
   </head>
   <body>
     <header>
-      <img class="logo" src="\styles\icons-images\PaoYingLogo.png" alt="Pao Ying Food Inc. Logo"
+      <img class="logo" src="/styles\icons-images\PaoYingLogo.png" alt="Pao Ying Food Inc. Logo"
       />
     </header>
     <div class="content">
-      <h1 id="result-body">Awaiting connection to scanner...</h1>
+        <div class="form-inline">
+          <h1 id="result-body">Awaiting connection to scanner...</h1>
+          <button id="identify" class="btn" onclick="start_identify()">Begin Scan</button>
+        </div>
+
       <h4 class="manual-header">Manually Enter Attendance</h4>
       <form class="form-inline" id="form" disabled>
         <div class="form-group">
           <label for="emp_id">Input Employee ID: </label>
           <input type="text" id="emp_id" class="form-control" aria-label="Input employee ID" placeholder="Your Employee ID here..."/>
         </div>
-        <button id="send" class="btn btn-default" type="submit">Time-In</button>
+        <button id="send" class="btn" type="submit">Time-In</button>
       </form>
     </div>
   </body>
