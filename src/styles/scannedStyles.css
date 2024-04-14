@@ -82,4 +82,14 @@ label {
     background-color: hsl(var(--background));
     border: 1px solid hsl(var(--primary));
     padding: 10px;
+
+    flex-direction: column;
+    gap: 3px;
+    align-items: center;
+    justify-content: center;
+}
+
+#employee-image {
+    width: 120px;
+    height: 120px;
 }

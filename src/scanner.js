@@ -17,6 +17,7 @@ let resultString = document.querySelector("#result-body");
 let btnIdentify = document.querySelector("#identify");
 let btnManual = document.querySelector("#manual");
 const revert = 7500; // time until text revert in ms
+const imageURL = "http://192.168.254.191/attendance/images/"; // change ip address
 
 // identify fingerprint
 async function start_identify() {
@@ -27,11 +28,11 @@ async function start_identify() {
     // check if response has error key
     if (result && result.responsecode === "success") {
       const data = result.body;
-      resultString.textContent = "<span class=\"success\">Attendance Recorded!</span>";
+      resultString.innerHTML = "<span class=\"success\">Attendance Recorded!</span>";
 
       // change data
-      document.querySelector("#employee-image").src = "http://192.168.254.191/attendance/images/" + data[0];
-      document.querySelector("#employee").textContent = "<span class=\"success\">" + data[1] + " " + data[2] + "</span>";
+      document.querySelector("#employee-image").src = imageURL + data[0];
+      document.querySelector("#employee").innerHTML = "<span class=\"success\">" + data[1] + " " + data[2] + "</span>";
       document.querySelector("#employee-id").textContent = data[0];
       document.querySelector("#date").textContent = data[4];
       document.querySelector("#time").textContent = data[3];
@@ -48,13 +49,13 @@ async function start_identify() {
 
       revertText();
     } else {
-      resultString.textContent = "<span class=\"error\">" + result.body + "</span>";
+      resultString.innerHTML = "<span class=\"error\">" + result.body + "</span>";
       console.error("Error in response: " + result.body);
 
       revertText();
     }
   } catch (err) {
-    resultString.textContent = "<span class=\"error\">" + result.body + "</span>";
+    resultString.innerHTML = "<span class=\"error\">" + result.body + "</span>";
     console.error("Error invoking start_identify: " + result.body);
 
     revertText();
@@ -74,11 +75,11 @@ async function manual_attendance() {
 
     if (result && result.responsecode === "success") {
       const data = result.body;
-      resultString.textContent = "<span class=\"success\">Attendance Recorded!</span>";
+      resultString.innerHTML = "<span class=\"success\">Attendance Recorded!</span>";
 
       // change data
-      document.querySelector("#employee-image").src = "http://192.168.254.191/attendance/images/" + data[0];
-      document.querySelector("#employee").textContent = "<span class=\"success\">" + data[1] + " " + data[2] + "</span>";
+      document.querySelector("#employee-image").src = imageURL + data[0];
+      document.querySelector("#employee").innerHTML = "<span class=\"success\">" + data[1] + " " + data[2] + "</span>";
       document.querySelector("#employee-id").textContent = data[0];
       document.querySelector("#date").textContent = data[4];
       document.querySelector("#time").textContent = data[3];
@@ -95,14 +96,14 @@ async function manual_attendance() {
 
       revertText();
     } else {
-      resultString.textContent = "<span class=\"error\">" + result.body + "</span>";
+      resultString.innerHTML = "<span class=\"error\">" + result.body + "</span>";
       console.error("Error in response: " + result.body);
 
       revertText();
     }
 
   } catch (err) {
-    resultString.textContent = "<span class=\"error\">", result.body, "</span>";
+    resultString.innerHTML = "<span class=\"error\">", result.body, "</span>";
     console.error("Error invoking start_identify: ", result.body);
 
     revertText();
@@ -126,7 +127,7 @@ function revertText() {
 // popup
 function showPopup() {
   const popup = document.querySelector("#popup");
-  popup.style.display = "block";
+  popup.style.display = "flex";
   setTimeout(() => {
     closePopup();
   }, revert);
