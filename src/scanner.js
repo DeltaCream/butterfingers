@@ -42,6 +42,7 @@ async function start_identify() {
       }
 
       // popup employee window
+      showPopup();
 
       console.log("Response: " + JSON.stringify(data));
 
@@ -69,9 +70,31 @@ async function manual_attendance() {
     const result = JSON.parse(response);
 
     if (result && result.responsecode === "success") {
+      const data = result.body;
+      resultString.textContent = "<span class=\"success\">Attendance Recorded!</span>";
 
+      // change data
+      document.querySelector("#employee-image").src = "https://localhost/attendance/images/" + data[0];
+      document.querySelector("#employee").textContent = "<span class=\"success\">" + data[1] + " " + data[2] + "</span>";
+      document.querySelector("#employee-id").textContent = data[0];
+      document.querySelector("#date").textContent = data[4];
+      document.querySelector("#time").textContent = data[3];
+      if (data[5] === "in") {
+        document.querySelector("#code").textContent = "Time-In";
+      } else {
+        document.querySelector("#code").textContent = "Time-Out";
+      }
+
+      // popup employee window
+
+      console.log("Response: " + JSON.stringify(data));
+
+      revertText();
     } else {
+      resultString.textContent = "<span class=\"error\">" + result.body + "</span>";
+      console.error("Error in response: " + result.body);
 
+      revertText();
     }
 
   } catch (err) {
