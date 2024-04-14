@@ -2,6 +2,7 @@ const { invoke } = window.__TAURI__.tauri;
 const { emit, listen } = window.__TAURI__.event;
 
 let resultString = document.querySelector("#result-body");
+const revert = 5000; // time until text revert in ms
 
 async function start_identify() {
   try {
@@ -13,14 +14,28 @@ async function start_identify() {
       const data = result.body;
       resultString.textContent = JSON.stringify(data);
       console.log("Response: ", JSON.stringify(data));
+
+      revertText();
     } else {
-      console.error("Error in response: ", result)
+      resultString.textContent = "<span class=\"error\">", result.body, "</span>";
+      console.error("Error in response: ", result.body);
+
+      revertText();
     }
   } catch (err) {
-    console.error("Error invoking start_identify: ", err);
+    resultString.textContent = "<span class=\"error\">", result.body, "</span>";
+    console.error("Error invoking start_identify: ", result.body);
+
+    revertText();
   }
 }
 
+function revertText() {
+  // revert text after [revert] ms
+  setTimeout(() => {
+    resultString.textContent = "Awaiting connection to scanner...";
+  }, revert);
+}
 
 /*
 let result;

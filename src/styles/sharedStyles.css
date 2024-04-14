@@ -43,7 +43,8 @@
     font-size: 16px;
 }
 
-html, body {
+html,
+body {
     font-family: 'poppins', sans-serif;
     font-size: var(--norm);
     background-color: hsl(var(--background));
@@ -65,10 +66,6 @@ html, body {
 
 .error {
     color: hsl(var(--error))
-}
-
-#result-body {
-    color: hsl(var(--error));
 }
 
 @media only screen and (max-height: 800px) {
