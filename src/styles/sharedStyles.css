@@ -67,6 +67,10 @@ html, body {
     color: hsl(var(--error))
 }
 
+#result-body {
+    color: hsl(var(--error));
+}
+
 @media only screen and (max-height: 800px) {
     header {
         margin: 0;

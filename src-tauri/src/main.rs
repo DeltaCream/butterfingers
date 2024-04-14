@@ -1,6 +1,9 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-use std::{sync::Arc, thread::{self, current}};
+use std::{
+    sync::Arc,
+    thread::{self, current},
+};
 use tauri::{App, AppHandle, Manager, State, Window};
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 use std::{
@@ -153,33 +156,33 @@ fn start_identify(device: State<Note>) -> Option<String> {
             Some(uuid) => {
                 //let uuid_2 = uuid.clone();
                 // std::thread::spawn( move || {
-                    //let rt  = Runtime::new().unwrap();
-                    //let local = tokio::task::LocalSet::new();
-                    //local.run_until( async { 
-                    // tauri::async_runtime::block_on( async {
-                    //let runtime = Builder::new();
-                    //thread::spawn( async || {
-                    //Runtime::new().unwrap().block_on(async {
-                    smol::block_on(async {
-                        println!("UUID of the fingerprint: {}", uuid);
-                        println!("Before recording attendance");
-                        let result = record_attendance(&uuid).await;
-                        if result.is_ok() {
-                                let msg = format!(
-                                    "Attendance recorded for {}\n",
-                                    employee_name_from_uuid(&uuid).await
-                                );
-                            println!("{}", msg);
-                            fun_result = Some(msg);
-                        } else {
-                            //show that attendance could not be recorded
-                            println!("Attendance could not be recorded\n");
-                            fun_result = Some(String::from("Attendance could not be recorded"));
-                            //increment number of tries, possibly resulting to manual attendance in the next iteration of the loop
-                        }
-                     });
+                //let rt  = Runtime::new().unwrap();
+                //let local = tokio::task::LocalSet::new();
+                //local.run_until( async {
+                // tauri::async_runtime::block_on( async {
+                //let runtime = Builder::new();
+                //thread::spawn( async || {
+                //Runtime::new().unwrap().block_on(async {
+                smol::block_on(async {
+                    println!("UUID of the fingerprint: {}", uuid);
+                    println!("Before recording attendance");
+                    let result = record_attendance(&uuid).await;
+                    if result.is_ok() {
+                        let msg = format!(
+                            "Attendance recorded for {}\n",
+                            employee_name_from_uuid(&uuid).await
+                        );
+                        println!("{}", msg);
+                        fun_result = Some(msg);
+                    } else {
+                        //show that attendance could not be recorded
+                        println!("Attendance could not be recorded\n");
+                        fun_result = Some(String::from("Attendance could not be recorded"));
+                        //increment number of tries, possibly resulting to manual attendance in the next iteration of the loop
+                    }
+                });
                 // }).join().expect("Thread panicked");
-            },
+            }
             None => {
                 println!("UUID could not be retrieved"); //uuid did not contain a string (essentially None acts as a null value)
                 fun_result = Some(String::from("UUID could not be retrieved"));
@@ -320,9 +323,7 @@ struct Note(Mutex<FpDevice>);
 #[tokio::main]
 async fn main() {
     tauri::Builder::default()
-        .setup(|_app| {
-            Ok(())
-        })
+        .setup(|_app| Ok(()))
         .manage(Note(Mutex::new(FpContext::new().devices().remove(0))))
         .invoke_handler(tauri::generate_handler![greet, start_identify])
         .run(tauri::generate_context!())
