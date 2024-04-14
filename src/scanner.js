@@ -1,16 +1,22 @@
 const { invoke } = window.__TAURI__.tauri;
 const { emit, listen } = window.__TAURI__.event;
 
-let result = document.querySelector("#result-body");
+let resultString = document.querySelector("#result-body");
 
 async function start_identify() {
-  let str = "";
   try {
-    str = await invoke("start_identify");
-    console.log(str);
-    result.textContent = str;
+    const response = await invoke("start_identify");
+    const result = JSON.parse(response);
+
+    // check if response has error key
+    if (result && result.error) {
+      console.error("Error: ", result.error);
+    } else {
+      console.log("Response: ", result);
+      resultString.textContent = `Employee ID: ${result.emp_id}\nName: ${result.name}\nTime In: ${result.time_in}`
+    }
   } catch (err) {
-    console.error(err);
+    console.error("Error invoking start_identify: ", err);
   }
 }
 
