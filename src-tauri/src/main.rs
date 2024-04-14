@@ -1,19 +1,20 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-use std::thread;
-use tauri::{App, AppHandle, Manager, Window};
+use std::{sync::Arc, thread::{self, current}};
+use tauri::{App, AppHandle, Manager, State, Window};
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 use std::{
     env,
     fmt::format,
     fs::{self, OpenOptions},
     io::{self, BufReader, Read},
+    sync::Mutex,
 };
 
 use libfprint_rs::{FpContext, FpDevice, FpPrint};
 
 use sqlx::MySqlPool;
-use tokio::runtime::Runtime;
+use tokio::runtime::{Builder, Runtime};
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -22,15 +23,18 @@ fn greet(name: &str) -> String {
 struct Payload {
     message: String,
 }
+
 #[tauri::command]
-fn start_identify() -> Option<String> {
+fn start_identify(device: State<Note>) -> Option<String> {
     let mut fun_result: Option<String> = Some(String::from(""));
     println!("entering verify mode!");
 
-    let context = FpContext::new();
-    let mut devices = context.devices();
-    //let fp_scanner = devices.first().expect("Devices could not be retrieved");
-    let fp_scanner = devices.remove(0);
+    // let context = FpContext::new();
+    // let mut devices = context.devices();
+    // //let fp_scanner = devices.first().expect("Devices could not be retrieved");
+    // let fp_scanner = devices.remove(0);
+    let fp_scanner = device.0.lock().unwrap();
+
     fp_scanner
         .open_sync(None)
         .expect("Device could not be opened");
@@ -140,32 +144,42 @@ fn start_identify() -> Option<String> {
         )
         .expect("Fingerprint could not be identified due to an error");
     println!("After identify_sync call");
-    let rt = Runtime::new().expect("Failed to create Tokio runtime");
+    // let rt = tokio::runtime::Handle::current(); //Runtime::new().expect("Failed to create Tokio runtime");
+    // tauri::async_runtime
     if print_identified.is_some() {
         let fprint = print_identified.expect("Print could not be unwrapped");
         let uuid = fprint.username();
         match uuid {
             Some(uuid) => {
-                rt.block_on(async{ 
-                    println!("UUID of the fingerprint: {}", uuid);
-                    println!("Before recording attendance");
-                    let result = record_attendance(&uuid).await;
-                    if result.is_ok() {
-                        let msg = format!(
-                            "Attendance recorded for {}\n",
-                            employee_name_from_uuid(&uuid).await
-                        );
-                        println!("{}", msg);
-                        fun_result = Some(msg);
-                    } else {
-                        //show that attendance could not be recorded
-                        println!("Attendance could not be recorded\n");
-                        fun_result = Some(String::from("Attendance could not be recorded"));
-                        //increment number of tries, possibly resulting to manual attendance in the next iteration of the loop
-                    }
-                });
-                
-            }
+                //let uuid_2 = uuid.clone();
+                // std::thread::spawn( move || {
+                    //let rt  = Runtime::new().unwrap();
+                    //let local = tokio::task::LocalSet::new();
+                    //local.run_until( async { 
+                    // tauri::async_runtime::block_on( async {
+                    //let runtime = Builder::new();
+                    //thread::spawn( async || {
+                    //Runtime::new().unwrap().block_on(async {
+                    smol::block_on(async {
+                        println!("UUID of the fingerprint: {}", uuid);
+                        println!("Before recording attendance");
+                        let result = record_attendance(&uuid).await;
+                        if result.is_ok() {
+                                let msg = format!(
+                                    "Attendance recorded for {}\n",
+                                    employee_name_from_uuid(&uuid).await
+                                );
+                            println!("{}", msg);
+                            fun_result = Some(msg);
+                        } else {
+                            //show that attendance could not be recorded
+                            println!("Attendance could not be recorded\n");
+                            fun_result = Some(String::from("Attendance could not be recorded"));
+                            //increment number of tries, possibly resulting to manual attendance in the next iteration of the loop
+                        }
+                     });
+                // }).join().expect("Thread panicked");
+            },
             None => {
                 println!("UUID could not be retrieved"); //uuid did not contain a string (essentially None acts as a null value)
                 fun_result = Some(String::from("UUID could not be retrieved"));
@@ -287,16 +301,29 @@ async fn record_attendance(uuid: &str) -> Result<(), Box<dyn std::error::Error>>
     pool.close().await; //close connection to database
     Ok(()) //return from the function with no errors
 }
+
+// struct Wrapper {
+//     context: Arc<Mutex<FpContext>>,
+// }
+
+// unsafe impl Send for Wrapper {}
+// unsafe impl Sync for Wrapper {}
+
+struct Note(Mutex<FpDevice>);
+
+// impl Default for Note {
+//     fn default() -> Self {
+//         Self(Mutex::new(FpContext::new().devices().remove(0)))
+//     }
+// }
+
 #[tokio::main]
 async fn main() {
     tauri::Builder::default()
-        .setup(|app| {
-            let main_window = app.get_window("main").unwrap();
-            // tauri::async_runtime::spawn(async move {
-            //verify(main_window.clone()).await;
-            // });
+        .setup(|_app| {
             Ok(())
         })
+        .manage(Note(Mutex::new(FpContext::new().devices().remove(0))))
         .invoke_handler(tauri::generate_handler![greet, start_identify])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
