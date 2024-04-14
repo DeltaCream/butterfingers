@@ -2,7 +2,7 @@ const { invoke } = window.__TAURI__.tauri;
 const { emit, listen } = window.__TAURI__.event;
 
 let resultString = document.querySelector("#result-body");
-const revert = 5000; // time until text revert in ms
+const revert = 7500; // time until text revert in ms
 
 async function start_identify() {
   try {
