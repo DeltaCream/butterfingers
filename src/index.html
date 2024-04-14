@@ -17,6 +17,14 @@
     <div class="content">
         <div class="form-inline">
           <h1 id="result-body">Awaiting connection to scanner...</h1>
+          <div class="popup" id="popup">
+            <img id="employee-image" src=""/>
+            <p id="employee">john doe</p>
+            <p id="employee-id">000</p>
+            <p id="date">date</p>
+            <p id="time">time</p>
+            <p id="code">in or out</p>
+          </div>
           <button id="identify" class="btn" onclick="start_identify()">Begin Scan</button>
         </div>
 
@@ -26,7 +34,7 @@
           <label for="emp_id">Input Employee ID: </label>
           <input type="text" id="emp_id" class="form-control" aria-label="Input employee ID" placeholder="Your Employee ID here..."/>
         </div>
-        <button id="send" class="btn" type="submit">Time-In</button>
+        <button id="manual" class="btn" type="submit">Time-In</button>
       </form>
     </div>
   </body>

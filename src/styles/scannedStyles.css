@@ -68,3 +68,18 @@ label {
     box-shadow: none;
     transform: translateY(0);
 }
+
+.success {
+    color: hsl(var(--primary));
+}
+
+.popup {
+    display: none;
+    position: fixed;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: hsl(var(--background));
+    border: 1px solid hsl(var(--primary));
+    padding: 10px;
+}
