@@ -9,11 +9,12 @@ async function start_identify() {
     const result = JSON.parse(response);
 
     // check if response has error key
-    if (result && result.error) {
-      console.error("Error: ", result.error);
+    if (result && result.responsecode === "success") {
+      const data = result.body;
+      resultString.textContent = JSON.stringify(data);
+      console.log("Response: ", JSON.stringify(data));
     } else {
-      console.log("Response: ", result);
-      resultString.textContent = `Employee ID: ${result.emp_id}\nName: ${result.name}\nTime In: ${result.time_in}`
+      console.error("Error in response: ", result)
     }
   } catch (err) {
     console.error("Error invoking start_identify: ", err);
