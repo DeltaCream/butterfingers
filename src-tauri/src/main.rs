@@ -439,8 +439,8 @@ pub fn match_cb(
 }
 
 async fn record_attendance(uuid: &str) -> Result<MySqlRow, String> {
-    //setup involving the .env file
     println!("recording attendance");
+    //setup involving the .env file
     match dotenvy::dotenv() {
         Ok(_) => (),
         Err(e) => return Err(format!("Failed to load .env file: {}", e)),
