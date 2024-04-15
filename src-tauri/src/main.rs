@@ -52,7 +52,9 @@ fn manual_attendance(emp: String) -> String {
             "body" : "Invalid employee ID",
         }).to_string(),
     };
+
     println!("asdsadsad");
+
     let mut output: Value = Default::default();
     let row = futures::executor::block_on(async {
         query_record_attendance(&emp_num).await
@@ -138,12 +140,20 @@ fn start_identify(device: State<Note>) -> String {
     println!("Fingerprint scanner opened!");
 
     // Get a list of all entries in the folder
-    let entries = fs::read_dir(
+    let entries = match fs::read_dir(
         dirs::home_dir()
             .expect("Home directory could not be found")
             .join("print/"),
-    )
-    .expect("Could not read the directory");
+    ) {
+        Ok(entries) => entries,
+        Err(e) => {
+            return json!({
+                "responsecode": "failure",
+                "body": format!("Could not retrieve files pertaining to the fingerprint scanner. Error: {}", e.to_string())
+            }).to_string();
+        }
+    };
+    //.expect("Could not read the directory");
 
     // Extract the filenames from the directory entries and store them in a vector
     let file_names: Vec<String> = entries
@@ -157,12 +167,19 @@ fn start_identify(device: State<Note>) -> String {
         })
         .collect();
     // Get a list of all entries in the folder
-    let entries = fs::read_dir(
+    let entries = match fs::read_dir(
         dirs::home_dir()
             .expect("Home directory could not be found")
             .join("print/"),
-    )
-    .expect("Could not read the directory");
+    ) {
+        Ok(entries) => entries,
+        Err(e) => {
+            return json!({
+                "responsecode": "failure",
+                "body": format!("Could not open fingerprint scanner. Error: {}", e.to_string()),
+            }).to_string();
+        }
+    };
 
     // Extract the filenames from the directory entries and store them in a vector
     let file_names: Vec<String> = entries
@@ -322,33 +339,55 @@ fn start_identify(device: State<Note>) -> String {
 }
 */
 
-async fn query_record_attendance(emp_id: &u64) -> Result<MySqlRow, Box<dyn std::error::Error>> {
+async fn query_record_attendance(emp_id: &u64) -> Result<MySqlRow, String> {
     //setup involving the .env file
-    dotenvy::dotenv()?;
+    //dotenvy::dotenv()?;
+
+    match dotenvy::dotenv() {
+        Ok(_) => (),
+        Err(e) => return Err("Failed to load .env file".to_string()),
+    }
+
+
+    let database_url = match env::var("DATABASE_URL") {
+        Ok(url) => url,
+        Err(_) => return Err("DATABASE_URL not set".to_string()),
+    };
+
     //connect to the database
-    let pool = MySqlPool::connect(&env::var("DATABASE_URL")?).await?;
+    let pool = match MySqlPool::connect(&database_url).await {
+        Ok(pool) => pool,
+        Err(e) => return Err(e.to_string()),
+    };
+
     //query the record_attendance_by_empid stored procedure (manual attendance)
-    let result = sqlx::query!("CALL record_attendance_by_empid(?)", emp_id)
-        .execute(&pool) //execute the query
-        .await?; //wait for the query to finish (some asynchronous programming shenanigans)
-                 //if the query was successful
-    // if result.rows_affected() > 0 {
-    //     println!("Attendance manually recorded"); //print that the attendance was recorded
-    // }
+    let result = match sqlx::query!("CALL record_attendance_by_empid(?)", emp_id)
+        .execute(&pool)
+        .await {
+            Ok(_) => (),
+            Err(e) => return Err(e.to_string()),
+        };
+
     
-    let uuid_query = sqlx::query!("SELECT fprint_uuid from enrolled_fingerprints where emp_id = ?", emp_id)
+    let uuid_query = match sqlx::query!("SELECT fprint_uuid from enrolled_fingerprints where emp_id = ?", emp_id)
         .fetch_one(&pool)
-        .await
-        .expect("Could not retrieve uuid");
+        .await {
+            Ok(uuid) => uuid,
+            Err(e) => return Err(e.to_string()),
+        };
+        //.expect("Could not retrieve uuid");
         
     let uuid = uuid_query.fprint_uuid;   //.get::<String, usize>(0);
 
     println!("UUID: {}", uuid);
 
-    let row = sqlx::query!("CALL get_latest_attendance_record(?)", uuid)
+    let row = match sqlx::query!("CALL get_latest_attendance_record(?)", uuid)
         .fetch_one(&pool)
-        .await
-        .expect("Could not retrieve latest attendance record");
+        .await {
+            Ok(row) => row,
+            Err(e) => return Err(e.to_string()),
+        };
+        //.expect("Could not retrieve latest attendance record");
 
     pool.close().await; //close connection to database
     Ok(row) //return from the function with no errors
@@ -451,71 +490,25 @@ async fn record_attendance(uuid: &str) -> Result<MySqlRow, String> {
     };
 
     //query the record_attendance stored procedure (non-manual attendance)
-    let result = sqlx::query!("CALL record_attendance(?)", uuid)
-        //.execute(&pool) //execute the query
+    let result = match sqlx::query!("CALL record_attendance(?)", uuid)
         .execute(&pool)
-        .await;
-        //.expect("Could not record attendance");
-        
-    match result {
-        Ok(_) => (),
-        Err(e) => {
-            return Err(e.to_string());
-        }
-    }
-        //.expect("Could not record attendance"); 
-                //wait for the query to finish (some asynchronous programming shenanigans)
-                 //if the query was successful
-                 // if result.rows_affected() > 0 {
-                 //     println!("Attendance recorded"); //print that the attendance was recorded
-                 // }
+        .await{
+            Ok(_) => (),
+            Err(e) => {
+                return Err(e.to_string());
+            }
+        };
     
-
-    // let row = sqlx::query!(r#"SET time_zone = "+08:00";
-    // IF(EXISTS(SELECT emp_id, fprint_uuid from enrolled_fingerprints where fprint_uuid = uuid)) then
-    //     SET @emp_id = (SELECT emp_id from enrolled_fingerprints where fprint_uuid = uuid);
-    //     select employee.emp_id, 
-    //     employee.fname, 
-    //     employee.lname, 
-    //     attendance_records.attendance_date,  attendance_records.attendance_time, attendance_status_code from employee join attendance_records where employee.emp_id = @emp_id and attendance_date = DATE(NOW()) ORDER BY attendance_date, record_no DESC LIMIT 1;"#, uuid)
     let row = sqlx::query!("CALL get_latest_attendance_record(?)", uuid)
         .fetch_one(&pool)
         .await;
 
+    pool.close().await; //close connection to database    
+
     if row.is_err() {
         return Err(row.unwrap_err().to_string());
     }
-        //.expect("Could not retrieve latest attendance record");
 
-    // if row.is_empty() {
-
-    // }
-
-    // for (row_number, row) in result.iter().enumerate() {
-
-    // }
-
-    //let some_field = row.0;
-
-    pool.close().await; //close connection to database
-    //Ok(()) //return from the function with no errors
-    // match (result.0, result.1, result.2, result.3, result.4, result.5) {
-    //     (fname, Some(mname), lname) => format!("{} {} {}", fname, mname, lname),
-    //     (fname, None, lname) => format!("{} {}", fname, lname),
-    // }
-    //Ok((result.0,result.1,result.2,result.3,result.4,result.5,result.6))
-    // for row in result {
-    //     println!("{} {} {}", row.0, row.1, row.2);
-    // }
-    //let result = result.fname;
-    // match (row.0, row.1, row.2, row.3, row.4, row.5) {
-    //     (fname, Some(mname), lname) => format!("{} {} {}", fname, mname, lname),
-    //     (fname, None, lname) => format!("{} {}", fname, lname),
-    // }
-    // let field = row.get(0);
-    // println!("{:?}", field);
-
-    //Ok(row)
     Ok(row.ok().unwrap())
 }
 
