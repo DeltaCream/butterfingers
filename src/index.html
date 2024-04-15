@@ -16,7 +16,7 @@
     </header>
     <div class="content">
         <div class="form-inline">
-          <h1 id="result-body">Awaiting connection to scanner...</h1>
+          <h1 id="result-body">Press "Begin Scan" to scan your finger for attendance.</h1>
           <div class="popup" id="popup">
             <img id="employee-image" src=""/>
             <p id="employee">john doe</p>
@@ -27,8 +27,10 @@
           </div>
           <button id="identify" class="btn" onclick="start_identify()">Begin Scan</button>
         </div>
-
-      <h4 class="manual-header">Manually Enter Attendance</h4>
+        <div class="form-inline">
+          <h1>Or...</h1>
+        </div>
+      <h4 class="manual-header">Manually enter your Employee ID # for attendance.</h4>
       <div class="form-inline" id="form" disabled>
         <div class="form-group">
           <label for="emp_id">Input Employee ID: </label>

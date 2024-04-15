@@ -1,17 +1,13 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-use std::{
-    sync::Arc,
-    thread::{self, current},
-};
+
 use serde_json::{json, Value};
-use tauri::{App, AppHandle, Manager, State, Window};
-// Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
+use tauri::State;
+
 use std::{
     env,
-    fmt::format,
     fs::{self, OpenOptions},
-    io::{self, BufReader, Read},
+    io::{BufReader, Read},
     sync::Mutex,
 };
 
@@ -20,7 +16,8 @@ use libfprint_rs::{FpContext, FpDevice, FpPrint};
 use sqlx::Row;
 
 use sqlx::{mysql::MySqlRow, types::time, MySqlPool};
-use tokio::runtime::{Builder, Runtime};
+
+// Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -33,11 +30,10 @@ struct Payload {
 #[tauri::command]
 fn test_function(emp: u64) -> String {
     println!("Entering test function");
-    let output = json!({
+    json!({
         "responsecode" : "success",
         "body" : emp,
-    }).to_string();
-    output
+    }).to_string()
 }
 
 #[tauri::command]
@@ -55,12 +51,11 @@ fn manual_attendance(emp: String) -> String {
 
     println!("asdsadsad");
 
-    let mut output: Value = Default::default();
     let row = futures::executor::block_on(async {
         query_record_attendance(&emp_num).await
     });
 
-    if row.is_ok() {
+    let output = if row.is_ok() {
         let row = row.unwrap();
         let row_emp_id = row.get::<u64, usize>(0);
         let row_fname = row.get::<String, usize>(1);
@@ -69,7 +64,7 @@ fn manual_attendance(emp: String) -> String {
         let row_time = row.get::<time::Time, usize>(4).to_string();
         let row_attendance_status = row.get::<u16, usize>(5);
 
-        output = json!({
+        json!({
             "responsecode" : "success",
             "body" : [
                  row_emp_id,
@@ -79,13 +74,13 @@ fn manual_attendance(emp: String) -> String {
                  row_date,
                  row_attendance_status,
             ] 
-         });
+         })
     } else {
-        output = json!({
+        json!({
             "responsecode" : "failure",
             "body" : row.err().unwrap().to_string(),
-        });
-    }
+        })
+    };
 
     output.to_string()
 }
@@ -117,23 +112,6 @@ fn start_identify(device: State<Note>) -> String {
     let mut fun_result: Value = Default::default();
     println!("entering verify mode!");
 
-    let fp_scanner = device.0.lock().unwrap();
-
-    let scanner_result = fp_scanner
-        .open_sync(None);
-
-    match scanner_result {
-        Ok(()) => {
-            println!("Fingerprint scanner opened!");
-        },
-        Err(e) => {
-            return json!({
-                "responsecode": "failure",
-                "body": format!("Could not open fingerprint scanner. Error: {}", e.to_string()),
-            }).to_string();
-        }
-    }    
-
     //Open the fingerprint scanner
     println!("Opening fingerprint scanner...");
     // fp_scanner.open_sync(None).expect("Device could not be opened. Please try plugging in your fingerprint scanner.");
@@ -149,34 +127,7 @@ fn start_identify(device: State<Note>) -> String {
         Err(e) => {
             return json!({
                 "responsecode": "failure",
-                "body": format!("Could not retrieve files pertaining to the fingerprint scanner. Error: {}", e.to_string())
-            }).to_string();
-        }
-    };
-    //.expect("Could not read the directory");
-
-    // Extract the filenames from the directory entries and store them in a vector
-    let file_names: Vec<String> = entries
-        .filter_map(|entry| {
-            let path = entry.ok()?.path();
-            if path.is_file() {
-                path.file_name()?.to_str().map(|s| s.to_owned())
-            } else {
-                None
-            }
-        })
-        .collect();
-    // Get a list of all entries in the folder
-    let entries = match fs::read_dir(
-        dirs::home_dir()
-            .expect("Home directory could not be found")
-            .join("print/"),
-    ) {
-        Ok(entries) => entries,
-        Err(e) => {
-            return json!({
-                "responsecode": "failure",
-                "body": format!("Could not open fingerprint scanner. Error: {}", e.to_string()),
+                "body": format!("Could not read the directory to retrieve files pertaining to the stored fingerprints. Error: {}", e.to_string())
             }).to_string();
         }
     };
@@ -192,8 +143,6 @@ fn start_identify(device: State<Note>) -> String {
             }
         })
         .collect();
-    // Print the list of files (for debugging purposes, commented out on production)
-    // println!("File names: {:?}", file_names);
 
     // Iterate over the file names
     let fingerprints = file_names
@@ -228,37 +177,77 @@ fn start_identify(device: State<Note>) -> String {
         })
         .collect::<Vec<FpPrint>>();
 
-    for (i, fingerprint) in fingerprints.iter().enumerate() {
-        //print the fingeprint number (on the array of fingerprints returned) and its corresponding username
-        println!(
-            "Username for Fingerprint #{}: {:?}",
-            i,
-            fingerprint
-                .username()
-                .expect("Fingerprint username could not be retrieved")
-        );
-    }
+    // for (i, fingerprint) in fingerprints.iter().enumerate() {
+    //     //print the fingeprint number (on the array of fingerprints returned) and its corresponding username
+    //     println!(
+    //         "Username for Fingerprint #{}: {:?}",
+    //         i,
+    //         fingerprint
+    //             .username()
+    //             .expect("Fingerprint username could not be retrieved")
+    //     );
+    // }
+
     //print that the fingerprints are retrieved (for debugging purposes, commented out on production)
     println!("Fingerprints retrieved");
+
+    let fp_scanner = match device.0.lock() {
+        Ok(fp_scanner) => fp_scanner,
+        Err(e) => {
+            return json!({
+                "responsecode": "failure",
+                "body": format!("Could not open fingerprint scanner. Error: {}", e.to_string()),
+            }).to_string();
+        }
+    };
+
+    match fp_scanner.open_sync(None) {
+        Ok(()) => {
+            println!("Fingerprint scanner opened!");
+        },
+        Err(e) => {
+            return json!({
+                "responsecode": "failure",
+                "body": format!("Could not open fingerprint scanner. Error: {}", e.to_string()),
+            }).to_string();
+        }
+    };
 
     let mut new_print = FpPrint::new(&fp_scanner);
     println!("Please scan your fingerprint");
 
-    println!("Before identify_sync call");
-    let print_identified = fp_scanner
+    let print_identified = match fp_scanner
         .identify_sync(
             &fingerprints,
             None,
             Some(match_cb),
             None,
             Some(&mut new_print),
-        )
-        .expect("Fingerprint could not be identified due to an error");
-    println!("After identify_sync call");
-    // let rt = tokio::runtime::Handle::current(); //Runtime::new().expect("Failed to create Tokio runtime");
-    // tauri::async_runtime
+        ) {
+            Ok(print) => print,
+            Err(e) => {
+                fp_scanner.close_sync(None).expect("Could not close the fingerprint scanner");
+                return json!({
+                    "responsecode": "failure",
+                    "body": format!("Could not identify fingerprint due to an error: {}", e.to_string()),
+                }).to_string();
+            }
+        };
+        //.expect("Fingerprint could not be identified due to an error");
+
+    match fp_scanner.close_sync(None) {
+        Ok(()) => (),
+        Err(e) => {
+                return json!({
+                "responsecode": "failure",
+                "body": format!("Could not close the fingerprint scanner. Error: {}",&e.to_string()),
+            }).to_string();
+        },
+    }
+
+
     if print_identified.is_some() {
-        let fprint = print_identified.expect("Print could not be unwrapped");
+        let fprint = print_identified.expect("Print should be able to be unwrapped here");
         let uuid = fprint.username();
         match uuid {
             Some(uuid) => {
@@ -267,11 +256,6 @@ fn start_identify(device: State<Note>) -> String {
                     println!("Before recording attendance");
                     let result = record_attendance(&uuid).await;
                     if result.is_ok() {
-                        let msg = format!(
-                            "Attendance recorded for {}\n",
-                            employee_name_from_uuid(&uuid).await
-                        );
-                        println!("{}", msg);
                         let row = result.unwrap();
                         let row_emp_id = row.get::<u64, usize>(0);
                         let row_fname = row.get::<String, usize>(1);
@@ -280,8 +264,11 @@ fn start_identify(device: State<Note>) -> String {
                         let row_time = row.get::<time::Time, usize>(4).to_string();
                         let row_attendance_status = row.get::<u16, usize>(5);
 
-                        // fun_result = Some(msg);
-                        fun_result = json!({
+                        let msg = format!("\nAttendance recorded for {} {}\n",row_fname, row_lname);
+
+                        println!("{}", msg);
+
+                        json!({
                             "responsecode": "success",
                             "body": [
                                 row_emp_id,
@@ -291,34 +278,32 @@ fn start_identify(device: State<Note>) -> String {
                                 row_date,
                                 row_attendance_status,
                             ]
-                        });
+                        }).to_string()
                     } else {
                         //show that attendance could not be recorded
                         println!("Attendance could not be recorded\n");
-                        fun_result = json!({
+                        json!({
                             "responsecode": "failure",
                             "body": result.err().unwrap().to_string(),
-                        });
+                        }).to_string()
                     }
-                });
+                })
             },
             None => {
                 println!("No user associated with fingerprint"); //uuid did not contain a string (essentially None acts as a null value)
-                fun_result = json!({
+                json!({
                     "responsecode": "failure",
                     "body": "No user associated with fingerprint",
-                });
+                }).to_string()
             }
         }
     } else {
         println!("No matching fingerprint could be found.");
-        fun_result = json!({
+        json!({
             "responsecode": "failure",
             "body": "No matching fingerprint could be found.",
-        })
+        }).to_string()
     }
-    fp_scanner.close_sync(None).unwrap();
-    fun_result.to_string()
 }
 /*
 {
@@ -340,12 +325,10 @@ fn start_identify(device: State<Note>) -> String {
 */
 
 async fn query_record_attendance(emp_id: &u64) -> Result<MySqlRow, String> {
-    //setup involving the .env file
-    //dotenvy::dotenv()?;
 
     match dotenvy::dotenv() {
         Ok(_) => (),
-        Err(e) => return Err("Failed to load .env file".to_string()),
+        Err(e) => return Err(format!("Failed to load .env file: {}", e)),
     }
 
 
@@ -361,7 +344,7 @@ async fn query_record_attendance(emp_id: &u64) -> Result<MySqlRow, String> {
     };
 
     //query the record_attendance_by_empid stored procedure (manual attendance)
-    let result = match sqlx::query!("CALL record_attendance_by_empid(?)", emp_id)
+    match sqlx::query!("CALL record_attendance_by_empid(?)", emp_id)
         .execute(&pool)
         .await {
             Ok(_) => (),
@@ -394,40 +377,40 @@ async fn query_record_attendance(emp_id: &u64) -> Result<MySqlRow, String> {
 }
 
 
-async fn employee_name_from_uuid(uuid: &str) -> String {
-    dotenvy::dotenv().unwrap();
-    let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap())
-        .await
-        .unwrap();
-    let result = sqlx::query!(r#"SELECT enrolled_fingerprints.fprint_uuid AS "uuid", employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" 
-    FROM enrolled_fingerprints JOIN employee USING(emp_id) WHERE fprint_uuid = ?"#, uuid)
-        .fetch_one(&pool)
-        .await
-        .expect("Could not retrieve employee name from uuid");
-    pool.close().await;
-    match (result.fname, result.mname, result.lname) {
-        (fname, Some(mname), lname) => format!("{} {} {}", fname, mname, lname),
-        (fname, None, lname) => format!("{} {}", fname, lname),
-    }
-}
+// async fn employee_name_from_uuid(uuid: &str) -> String {
+//     dotenvy::dotenv().unwrap();
+//     let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap())
+//         .await
+//         .unwrap();
+//     let result = sqlx::query!(r#"SELECT enrolled_fingerprints.fprint_uuid AS "uuid", employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" 
+//     FROM enrolled_fingerprints JOIN employee USING(emp_id) WHERE fprint_uuid = ?"#, uuid)
+//         .fetch_one(&pool)
+//         .await
+//         .expect("Could not retrieve employee name from uuid");
+//     pool.close().await;
+//     match (result.fname, result.mname, result.lname) {
+//         (fname, Some(mname), lname) => format!("{} {} {}", fname, mname, lname),
+//         (fname, None, lname) => format!("{} {}", fname, lname),
+//     }
+// }
 
-async fn employee_name_from_empid(emp_id: &u64) -> String {
-    dotenvy::dotenv().unwrap();
-    let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap())
-        .await
-        .unwrap();
-    let result = sqlx::query!(//r#"SELECT production_staff.emp_id AS "emp_id", 
-    //employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" FROM production_staff JOIN employee USING(emp_id) WHERE emp_id = ?"#, emp_id)
-        r#"SELECT employee.emp_id AS "emp_id", employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" FROM employee WHERE role_code = 2 AND emp_id = ?"#, emp_id)
-        .fetch_one(&pool)
-        .await
-        .expect("Could not retrieve employee name from employee id");
-    pool.close().await;
-    match (result.fname, result.mname, result.lname) {
-        (fname, Some(mname), lname) => format!("{} {} {}", fname, mname, lname),
-        (fname, None, lname) => format!("{} {}", fname, lname),
-    }
-}
+// async fn employee_name_from_empid(emp_id: &u64) -> String {
+//     dotenvy::dotenv().unwrap();
+//     let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap())
+//         .await
+//         .unwrap();
+//     let result = sqlx::query!(//r#"SELECT production_staff.emp_id AS "emp_id", 
+//     //employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" FROM production_staff JOIN employee USING(emp_id) WHERE emp_id = ?"#, emp_id)
+//         r#"SELECT employee.emp_id AS "emp_id", employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" FROM employee WHERE role_code = 2 AND emp_id = ?"#, emp_id)
+//         .fetch_one(&pool)
+//         .await
+//         .expect("Could not retrieve employee name from employee id");
+//     pool.close().await;
+//     match (result.fname, result.mname, result.lname) {
+//         (fname, Some(mname), lname) => format!("{} {} {}", fname, mname, lname),
+//         (fname, None, lname) => format!("{} {}", fname, lname),
+//     }
+// }
 
 //function below is a callback function that is called when a scanned fingerprint is matched with previously enrolled fingerprints
 pub fn match_cb(
@@ -438,17 +421,6 @@ pub fn match_cb(
     _data: &Option<()>,
 ) {
     if let Some(matched_print) = &matched_print {
-        //get the matched print
-        //print the matched print's username
-        //println!("Matched print: {:#}", matched_print.username().expect("Fingerprint username could not be retrieved"));
-
-        //set the matched print's username to the print
-        // if print.username().is_some() {
-        //     println!("Print: {:#}", &print.username().expect("Fingerprint username could not be retrieved"));
-        // } else {
-        //     println!("Print does not have a username");
-        // }
-
         //set the scanned fingerprint's username to the matched print's username
         //(because the scanned fingerprint was matched with the previously enrolled fingerprint,
         //and currently, the scanned fingerprint has no username)
@@ -457,12 +429,8 @@ pub fn match_cb(
                 .username()
                 .expect("Username could not be retrieved"),
         );
-
         println!("Matched");
 
-        //print the scanned fingerprint's username for debugging purposes
-        //(by this point, the scanned fingerprint should already have the same username as the matched fingerprint)
-        //println!("Print username: {:#}", &print.username().expect("Fingerprint username could not be retrieved"));
     } else {
         //if matched_print is None (null value)
         //print that no fingerprint was matched with the scanned fingerprint
@@ -475,7 +443,7 @@ async fn record_attendance(uuid: &str) -> Result<MySqlRow, String> {
     println!("recording attendance");
     match dotenvy::dotenv() {
         Ok(_) => (),
-        Err(e) => return Err("Failed to load .env file".to_string()),
+        Err(e) => return Err(format!("Failed to load .env file: {}", e)),
     }
 
     let database_url = match env::var("DATABASE_URL") {
@@ -490,7 +458,7 @@ async fn record_attendance(uuid: &str) -> Result<MySqlRow, String> {
     };
 
     //query the record_attendance stored procedure (non-manual attendance)
-    let result = match sqlx::query!("CALL record_attendance(?)", uuid)
+    match sqlx::query!("CALL record_attendance(?)", uuid)
         .execute(&pool)
         .await{
             Ok(_) => (),
@@ -506,7 +474,7 @@ async fn record_attendance(uuid: &str) -> Result<MySqlRow, String> {
     pool.close().await; //close connection to database    
 
     if row.is_err() {
-        return Err(row.unwrap_err().to_string());
+        return Err(row.err().unwrap().to_string());
     }
 
     Ok(row.ok().unwrap())

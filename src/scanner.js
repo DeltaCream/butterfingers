@@ -67,10 +67,10 @@ let inputID = document.querySelector("#emp_id");
 async function manual_attendance() {
   try {
     const emp_id = inputID.value;
-    console.log("Before manual invoke");
+    //console.log("Before manual invoke");
     console.log(inputID.value);
     const response = await invoke("manual_attendance", { emp: String(emp_id) }); //await invoke("manual_attendance", { emp: inputID.value });
-    console.log("After manual invoke");
+    //console.log("After manual invoke");
     const result = JSON.parse(response);
 
     if (result && result.responsecode === "success") {
