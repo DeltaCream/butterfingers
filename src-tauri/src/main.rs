@@ -45,17 +45,17 @@ fn manual_attendance(emp: String) -> String {
     println!("Entering manual attendance");
     println!("Emp: {}", emp);
 
-    let emp = match emp.trim().parse::<u64>() {
+    let emp_num = match emp.trim().parse::<u64>() {
         Ok(num) => num,
         Err(_) => return json!({
             "responsecode" : "failure",
             "body" : "Invalid employee ID",
         }).to_string(),
     };
-
+    println!("asdsadsad");
     let mut output: Value = Default::default();
     let row = futures::executor::block_on(async {
-        query_record_attendance(&emp).await
+        query_record_attendance(&emp_num).await
     });
 
     if row.is_ok() {
