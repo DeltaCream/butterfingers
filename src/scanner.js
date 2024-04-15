@@ -16,8 +16,8 @@ body: {
 let resultString = document.querySelector("#result-body");
 let btnIdentify = document.querySelector("#identify");
 let btnManual = document.querySelector("#manual");
-const revert = 7500; // time until text revert in ms
-const imageURL = "http://192.168.254.191/attendance/images/"; // change ip address
+const revert = 2000; // time until text revert in ms
+const imageURL = "http://192.168.0.126/attendance/images/"; // change ip address
 
 // identify fingerprint
 async function start_identify() {
@@ -69,7 +69,7 @@ async function manual_attendance() {
     const emp_id = inputID.value;
     console.log("Before manual invoke");
     console.log(inputID.value);
-    const response = await invoke("manual_attendance", { emp: emp_id }); //await invoke("manual_attendance", { emp: inputID.value });
+    const response = await invoke("manual_attendance", { emp: String(emp_id) }); //await invoke("manual_attendance", { emp: inputID.value });
     console.log("After manual invoke");
     const result = JSON.parse(response);
 

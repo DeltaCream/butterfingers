@@ -81,7 +81,7 @@ fn manual_attendance(emp: String) -> String {
     } else {
         output = json!({
             "responsecode" : "failure",
-            "body" : "No record found",
+            "body" : row.err().unwrap().to_string(),
         });
     }
 
@@ -117,9 +117,21 @@ fn start_identify(device: State<Note>) -> String {
 
     let fp_scanner = device.0.lock().unwrap();
 
-    fp_scanner
-        .open_sync(None)
-        .expect("Device could not be opened");
+    let scanner_result = fp_scanner
+        .open_sync(None);
+
+    match scanner_result {
+        Ok(()) => {
+            println!("Fingerprint scanner opened!");
+        },
+        Err(e) => {
+            return json!({
+                "responsecode": "failure",
+                "body": format!("Could not open fingerprint scanner. Error: {}", e.to_string()),
+            }).to_string();
+        }
+    }    
+
     //Open the fingerprint scanner
     println!("Opening fingerprint scanner...");
     // fp_scanner.open_sync(None).expect("Device could not be opened. Please try plugging in your fingerprint scanner.");
@@ -268,24 +280,24 @@ fn start_identify(device: State<Note>) -> String {
                         println!("Attendance could not be recorded\n");
                         fun_result = json!({
                             "responsecode": "failure",
-                            "body": "Attendance could not be recorded",
+                            "body": result.err().unwrap().to_string(),
                         });
                     }
                 });
             },
             None => {
-                println!("UUID could not be retrieved"); //uuid did not contain a string (essentially None acts as a null value)
+                println!("No user associated with fingerprint"); //uuid did not contain a string (essentially None acts as a null value)
                 fun_result = json!({
                     "responsecode": "failure",
-                    "body": "UUID could not be retrieved",
+                    "body": "No user associated with fingerprint",
                 });
             }
         }
     } else {
-        println!("No matching fingerprint could be found");
+        println!("No matching fingerprint could be found.");
         fun_result = json!({
             "responsecode": "failure",
-            "body": "No matching fingerprint could be found",
+            "body": "No matching fingerprint could be found.",
         })
     }
     fp_scanner.close_sync(None).unwrap();
@@ -419,18 +431,38 @@ pub fn match_cb(
     }
 }
 
-async fn record_attendance(uuid: &str) -> Result<MySqlRow, Box<dyn std::error::Error>> {
+async fn record_attendance(uuid: &str) -> Result<MySqlRow, String> {
     //setup involving the .env file
     println!("recording attendance");
-    dotenvy::dotenv()?;
+    match dotenvy::dotenv() {
+        Ok(_) => (),
+        Err(e) => return Err("Failed to load .env file".to_string()),
+    }
+
+    let database_url = match env::var("DATABASE_URL") {
+        Ok(url) => url,
+        Err(_) => return Err("DATABASE_URL not set".to_string()),
+    };
+
     //connect to the database
-    let pool = MySqlPool::connect(&env::var("DATABASE_URL")?).await?;
+    let pool = match MySqlPool::connect(&database_url).await {
+        Ok(pool) => pool,
+        Err(e) => return Err(e.to_string()),
+    };
+
     //query the record_attendance stored procedure (non-manual attendance)
     let result = sqlx::query!("CALL record_attendance(?)", uuid)
         //.execute(&pool) //execute the query
         .execute(&pool)
-        .await
-        .expect("Could not record attendance");
+        .await;
+        //.expect("Could not record attendance");
+        
+    match result {
+        Ok(_) => (),
+        Err(e) => {
+            return Err(e.to_string());
+        }
+    }
         //.expect("Could not record attendance"); 
                 //wait for the query to finish (some asynchronous programming shenanigans)
                  //if the query was successful
@@ -448,8 +480,12 @@ async fn record_attendance(uuid: &str) -> Result<MySqlRow, Box<dyn std::error::E
     //     attendance_records.attendance_date,  attendance_records.attendance_time, attendance_status_code from employee join attendance_records where employee.emp_id = @emp_id and attendance_date = DATE(NOW()) ORDER BY attendance_date, record_no DESC LIMIT 1;"#, uuid)
     let row = sqlx::query!("CALL get_latest_attendance_record(?)", uuid)
         .fetch_one(&pool)
-        .await
-        .expect("Could not retrieve latest attendance record");
+        .await;
+
+    if row.is_err() {
+        return Err(row.unwrap_err().to_string());
+    }
+        //.expect("Could not retrieve latest attendance record");
 
     // if row.is_empty() {
 
@@ -479,7 +515,8 @@ async fn record_attendance(uuid: &str) -> Result<MySqlRow, Box<dyn std::error::E
     // let field = row.get(0);
     // println!("{:?}", field);
 
-    Ok(row)
+    //Ok(row)
+    Ok(row.ok().unwrap())
 }
 
 // struct AttRecord {
