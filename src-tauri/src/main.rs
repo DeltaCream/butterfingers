@@ -293,7 +293,7 @@ fn start_identify(device: State<Note>) -> String {
                 println!("No user associated with fingerprint"); //uuid did not contain a string (essentially None acts as a null value)
                 json!({
                     "responsecode": "failure",
-                    "body": "No user associated with fingerprint",
+                    "body": "No user associated with fingerprint. Please try scanning again, or enroll first.",
                 }).to_string()
             }
         }
