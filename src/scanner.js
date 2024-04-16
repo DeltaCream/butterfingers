@@ -83,7 +83,7 @@ async function manual_attendance() {
       document.querySelector("#employee-id").textContent = "ID: " + data[0];
       document.querySelector("#date").textContent = "Date: " + data[4];
       document.querySelector("#time").textContent = "Time: " + formatTime(data[3]);
-      if (data[5] === "in") {
+      if (data[5] == 1) {
         document.querySelector("#code").textContent = "Action: Time-In";
       } else {
         document.querySelector("#code").textContent = "Action: Time-Out";
