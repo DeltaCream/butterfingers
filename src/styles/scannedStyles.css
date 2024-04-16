@@ -82,7 +82,7 @@ label {
     border: 2px solid #9396a8;
     border-radius: 8px;
     padding: 32px;
-
+    background-color: hsl(var(--background));
     flex-direction: column;
     gap: 3px;
     align-items: center;
