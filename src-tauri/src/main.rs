@@ -108,14 +108,17 @@ fn manual_attendance(emp: String) -> String {
 
 #[tauri::command]
 fn start_identify(device: State<Note>) -> String {
-    //let mut fun_result: Option<String> = Some(String::from(""));
-    let mut fun_result: Value = Default::default();
     println!("entering verify mode!");
 
-    //Open the fingerprint scanner
-    println!("Opening fingerprint scanner...");
-    // fp_scanner.open_sync(None).expect("Device could not be opened. Please try plugging in your fingerprint scanner.");
-    println!("Fingerprint scanner opened!");
+    if device.0.is_none() {
+        return json!({
+            "responsecode": "failure",
+            "body": "Device could not be opened. Please try plugging in your fingerprint scanner and restarting the app.",
+        }).to_string();
+    }
+    
+    //let mut fun_result: Option<String> = Some(String::from(""));
+    let mut fun_result: Value = Default::default();
 
     // Get a list of all entries in the folder
     let entries = match fs::read_dir(
@@ -191,7 +194,8 @@ fn start_identify(device: State<Note>) -> String {
     //print that the fingerprints are retrieved (for debugging purposes, commented out on production)
     println!("Fingerprints retrieved");
 
-    let fp_scanner = match device.0.lock() {
+    //
+    let fp_scanner = match device.0.as_ref().unwrap().lock() {
         Ok(fp_scanner) => fp_scanner,
         Err(e) => {
             return json!({
@@ -496,7 +500,17 @@ async fn record_attendance(uuid: &str) -> Result<MySqlRow, String> {
 // unsafe impl Send for Wrapper {}
 // unsafe impl Sync for Wrapper {}
 
-struct Note(Mutex<FpDevice>);
+struct Note(Option<Mutex<FpDevice>>);
+
+impl Default for Note {
+    fn default() -> Self {
+        let context = FpContext::new();
+        match context.devices().len() {
+            0 => Self(None),
+            _ => Self(Some(Mutex::new(context.devices().remove(0)))),
+        }
+    }
+}
 
 // impl Default for Note {
 //     fn default() -> Self {
@@ -508,7 +522,7 @@ struct Note(Mutex<FpDevice>);
 async fn main() {
     tauri::Builder::default()
         .setup(|_app| Ok(()))
-        .manage(Note(Mutex::new(FpContext::new().devices().remove(0))))
+        .manage(Note::default())
         .invoke_handler(tauri::generate_handler![greet, start_identify, manual_attendance])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
