@@ -80,13 +80,13 @@ async function manual_attendance() {
       // change data
       document.querySelector("#employee-image").src = imageURL + data[0];
       document.querySelector("#employee").innerHTML = "<span class=\"success\">" + data[1] + " " + data[2] + "</span>";
-      document.querySelector("#employee-id").textContent = data[0];
-      document.querySelector("#date").textContent = data[4];
-      document.querySelector("#time").textContent = data[3];
+      document.querySelector("#employee-id").textContent = "ID: " + data[0];
+      document.querySelector("#date").textContent = "Date: " + data[4];
+      document.querySelector("#time").textContent = "Time: " + formatTime(data[3]);
       if (data[5] === "in") {
-        document.querySelector("#code").textContent = "Time-In";
+        document.querySelector("#code").textContent = "Action: Time-In";
       } else {
-        document.querySelector("#code").textContent = "Time-Out";
+        document.querySelector("#code").textContent = "Action: Time-Out";
       }
 
       // popup employee window
@@ -136,6 +136,12 @@ function showPopup() {
 function closePopup() {
   const popup = document.querySelector("#popup");
   popup.style.display = "none";
+}
+
+function formatTime(timeString) {
+  const [hourString, minute, seconds] = timeString.split(":");
+  const hour = +hourString % 24;
+  return (hour % 12 || 12) + ":" + minute + ":" + seconds + " " + (hour < 12 ? "AM" : "PM");
 }
 
 /*

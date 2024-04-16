@@ -76,17 +76,24 @@ label {
 .popup {
     display: none;
     position: fixed;
-    bottom: 10px;
+    top: 20%;
     left: 50%;
     transform: translateX(-50%);
-    background-color: hsl(var(--background));
-    border: 1px solid hsl(var(--primary));
-    padding: 10px;
+    border: 2px solid #9396a8;
+    border-radius: 8px;
+    padding: 32px;
 
     flex-direction: column;
     gap: 3px;
     align-items: center;
     justify-content: center;
+    text-align: center;
+}
+
+#employee {
+    font-size: 1.77rem;
+    font-weight: 600;
+    color: #50c047;
 }
 
 #employee-image {
