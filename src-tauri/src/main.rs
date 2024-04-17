@@ -49,8 +49,6 @@ fn manual_attendance(emp: String) -> String {
         }).to_string(),
     };
 
-    println!("asdsadsad");
-
     let row = futures::executor::block_on(async {
         query_record_attendance(&emp_num).await
     });
@@ -58,11 +56,77 @@ fn manual_attendance(emp: String) -> String {
     let output = if row.is_ok() {
         let row = row.unwrap();
         let row_emp_id = row.get::<u64, usize>(0);
+        println!("Emp ID: {}", row_emp_id);
         let row_fname = row.get::<String, usize>(1);
+        println!("Fname: {}", row_fname);
         let row_lname = row.get::<String, usize>(2);
-        let row_date = row.get::<time::Date, usize>(3).to_string();
-        let row_time = row.get::<time::Time, usize>(4).to_string();
-        let row_attendance_status = row.get::<u16, usize>(5);
+        println!("Lname: {}", row_lname);
+        //let row_date = row.get::<time::Date, usize>(3).to_string();
+        let row_date = match row.try_get::<time::Date, usize>(3) {
+            Ok(date) => date.to_string(),
+            Err(e) => {
+                match e {
+                    sqlx::Error::ColumnNotFound(_) => {
+                        println!("Column not found");
+                        "error".to_string()
+                    }
+                    sqlx::Error::ColumnDecode { index, source } => {
+                        println!("Column decode error: {} at index {}", source, index);
+                        "error".to_string()
+                    }
+                    _ => {
+                        println!("Unknown error: {}", e);
+                        "error".to_string()
+                    }
+                }
+            }
+        };
+        println!("Date: {}", row_date);
+
+        //let row_time = row.get::<time::Time, usize>(4).to_string();
+        let row_time = match row.try_get::<time::Time, usize>(4) {
+            Ok(date) => date.to_string(),
+            Err(e) => {
+                match e {
+                    sqlx::Error::ColumnNotFound(_) => {
+                        println!("Column not found");
+                        "error".to_string()
+                    }
+                    sqlx::Error::ColumnDecode { index, source } => {
+                        println!("Column decode error: {} at index {}", source, index);
+                        "error".to_string()
+                    }
+                    _ => {
+                        println!("Unknown error: {}", e);
+                        "error".to_string()
+                    }
+                }
+            }
+        };
+        println!("Time: {}", row_time);
+
+        //let row_attendance_status = row.get::<u16, usize>(5);
+        let row_attendance_status = match row.try_get::<u64, usize>(5) {
+            Ok(status) => status.to_string(),
+            Err(e) => {
+                match e {
+                    sqlx::Error::ColumnNotFound(_) => {
+                        println!("Column not found");
+                        "error".to_string()
+                    }
+                    sqlx::Error::ColumnDecode { index, source } => {
+                        println!("Column decode error: {} at index {}", source, index);
+                        "error".to_string()
+                    }
+                    _ => {
+                        println!("Unknown error: {}", e);
+                        "error".to_string()
+                    }
+                }
+            }
+        };
+        println!("Attendance Status: {}", row_attendance_status);
+
 
         json!({
             "responsecode" : "success",
@@ -330,15 +394,9 @@ fn start_identify(device: State<Note>) -> String {
 
 async fn query_record_attendance(emp_id: &u64) -> Result<MySqlRow, String> {
 
-    match dotenvy::dotenv() {
-        Ok(_) => (),
-        Err(e) => return Err(format!("Failed to load .env file: {}", e)),
-    }
-
-
-    let database_url = match env::var("DATABASE_URL") {
+    let database_url = match db_url() {
         Ok(url) => url,
-        Err(_) => return Err("DATABASE_URL not set".to_string()),
+        Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
     };
 
     //connect to the database
@@ -348,36 +406,48 @@ async fn query_record_attendance(emp_id: &u64) -> Result<MySqlRow, String> {
     };
 
     //query the record_attendance_by_empid stored procedure (manual attendance)
-    match sqlx::query!("CALL record_attendance_by_empid(?)", emp_id)
-        .execute(&pool)
-        .await {
-            Ok(_) => (),
-            Err(e) => return Err(e.to_string()),
-        };
-
-    
-    let uuid_query = match sqlx::query!("SELECT fprint_uuid from enrolled_fingerprints where emp_id = ?", emp_id)
+    let result = match sqlx::query!("CALL record_attendance_by_empid(?)", emp_id)
+        //.execute(&pool)
         .fetch_one(&pool)
         .await {
-            Ok(uuid) => uuid,
-            Err(e) => return Err(e.to_string()),
+            Ok(result) => {
+                println!("Attendance recorded successfully");
+                result
+            },
+            Err(e) => {
+                match e {
+                    sqlx::Error::Database(e) => {
+                        return Err(e.message().to_string());
+                    },
+                    _ => {
+                        return Err(e.to_string());
+                    }
+                }
+            },
         };
-        //.expect("Could not retrieve uuid");
+
+    // let uuid_query = match sqlx::query!("SELECT fprint_uuid from enrolled_fingerprints where emp_id = ?", emp_id)
+    //     .fetch_one(&pool)
+    //     .await {
+    //         Ok(uuid) => uuid,
+    //         Err(e) => return Err(e.to_string()),
+    //     };
+    //     //.expect("Could not retrieve uuid");
         
-    let uuid = uuid_query.fprint_uuid;   //.get::<String, usize>(0);
+    // let uuid = uuid_query.fprint_uuid;   //.get::<String, usize>(0);
 
-    println!("UUID: {}", uuid);
+    // println!("UUID: {}", uuid);
 
-    let row = match sqlx::query!("CALL get_latest_attendance_record(?)", uuid)
-        .fetch_one(&pool)
-        .await {
-            Ok(row) => row,
-            Err(e) => return Err(e.to_string()),
-        };
+    // let row = match sqlx::query!("CALL get_latest_attendance_record(?)", uuid)
+    //     .fetch_one(&pool)
+    //     .await {
+    //         Ok(row) => row,
+    //         Err(e) => return Err(e.to_string()),
+    //     };
         //.expect("Could not retrieve latest attendance record");
 
     pool.close().await; //close connection to database
-    Ok(row) //return from the function with no errors
+    Ok(result) //return from the function with no errors
 }
 
 
@@ -445,14 +515,10 @@ pub fn match_cb(
 async fn record_attendance(uuid: &str) -> Result<MySqlRow, String> {
     println!("recording attendance");
     //setup involving the .env file
-    match dotenvy::dotenv() {
-        Ok(_) => (),
-        Err(e) => return Err(format!("Failed to load .env file: {}", e)),
-    }
 
-    let database_url = match env::var("DATABASE_URL") {
+    let database_url = match db_url() {
         Ok(url) => url,
-        Err(_) => return Err("DATABASE_URL not set".to_string()),
+        Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
     };
 
     //connect to the database
@@ -482,6 +548,51 @@ async fn record_attendance(uuid: &str) -> Result<MySqlRow, String> {
     }
 
     Ok(row.ok().unwrap())
+}
+
+fn db_url() -> Result<String, String> {
+    match dotenvy::dotenv() {
+        Ok(_) => (),
+        Err(e) => return Err(format!("Failed to load .env file: {}", e)),
+    }
+
+    let db_type = match env::var("DB_TYPE") {
+        Ok(db_type) => db_type,
+        Err(_) => return Err("DB_TYPE not set".to_string()),
+    };
+
+    let db_username = match env::var("DB_USERNAME") {
+        Ok(username) => username,
+        Err(_) => return Err("DB_USERNAME not set".to_string()),
+    };
+
+    let db_password = match env::var("DB_PASSWORD") {
+        Ok(password) => password,
+        Err(_) => return Err("DB_PASSWORD not set".to_string()),
+    };
+
+    let hostname = match env::var("HOSTNAME") {
+        Ok(name) => name,
+        Err(_) => return Err("HOSTNAME not set".to_string()),
+    };
+
+    let db_port = match env::var("DB_PORT") {
+        Ok(port) => port,
+        Err(_) => return Err("DB_PORT not set".to_string()),
+    };
+
+    let db_name = match env::var("DB_NAME") {
+        Ok(name) => name,
+        Err(_) => return Err("DB_NAME not set".to_string()),
+    };
+
+    let db_params = match env::var("DB_PARAMS") {
+        Ok(params) => params,
+        Err(_) => return Err("DB_PARAMS not set".to_string()),
+    };
+
+    let database_url = format!("{}://{}:{}@{}:{}/{}?{}",db_type,db_username,db_password,hostname,db_port,db_name,db_params);
+    Ok(database_url)
 }
 
 // struct AttRecord {

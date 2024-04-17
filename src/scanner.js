@@ -17,7 +17,7 @@ let resultString = document.querySelector("#result-body");
 let btnIdentify = document.querySelector("#identify");
 let btnManual = document.querySelector("#manual");
 const revert = 2000; // time until text revert in ms
-const imageURL = "http://192.168.0.126/attendance/images/"; // change ip address
+const imageURL = "http://10.18.3.172/attendance/images/"; // change ip address
 
 // identify fingerprint
 async function start_identify() {
@@ -118,7 +118,7 @@ function revertText() {
 
   // revert text after [revert] ms
   setTimeout(() => {
-    resultString.textContent = "Awaiting connection to scanner...";
+    resultString.textContent = "Press \"Begin Scan\" to scan your finger for attendance.";
     btnIdentify.disabled = false;
     btnManual.disabled = false;
   }, revert);
