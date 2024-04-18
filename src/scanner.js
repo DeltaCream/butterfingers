@@ -122,7 +122,7 @@ function revertText() {
 
   // revert text after [revert] ms
   setTimeout(() => {
-    resultString.textContent = "Press \"Begin Scan\" to scan your finger for attendance.";
+    resultString.textContent = "Press \"Begin Scan\" to scan your right index finger for attendance.";
     btnIdentify.disabled = false;
     btnManual.disabled = false;
   }, revert);

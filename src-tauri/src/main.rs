@@ -1,7 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use serde_json::{json, Value};
+use serde_json::json;
 use tauri::State;
 
 use std::{
@@ -18,23 +18,25 @@ use sqlx::Row;
 use sqlx::{mysql::MySqlRow, types::time, MySqlPool};
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
+// #[tauri::command]
+// fn greet(name: &str) -> String {
+//     format!("Hello, {}! You've been greeted from Rust!", name)
+// }
+
 #[derive(Clone, serde::Serialize)]
 struct Payload {
     message: String,
 }
 
-#[tauri::command]
-fn test_function(emp: u64) -> String {
-    println!("Entering test function");
-    json!({
-        "responsecode" : "success",
-        "body" : emp,
-    }).to_string()
-}
+// #[tauri::command]
+// fn test_function(emp: u64) -> String {
+//     println!("Entering test function");
+//     json!({
+//         "responsecode" : "success",
+//         "body" : emp,
+//     })
+//     .to_string()
+// }
 
 #[tauri::command]
 fn manual_attendance(emp: String) -> String {
@@ -43,15 +45,16 @@ fn manual_attendance(emp: String) -> String {
 
     let emp_num = match emp.trim().parse::<u64>() {
         Ok(num) => num,
-        Err(_) => return json!({
-            "responsecode" : "failure",
-            "body" : "Invalid employee ID",
-        }).to_string(),
+        Err(_) => {
+            return json!({
+                "responsecode" : "failure",
+                "body" : "Invalid employee ID",
+            })
+            .to_string()
+        }
     };
 
-    let row = futures::executor::block_on(async {
-        query_record_attendance(&emp_num).await
-    });
+    let row = futures::executor::block_on(async { query_record_attendance(&emp_num).await });
 
     let output = if row.is_ok() {
         let row = row.unwrap();
@@ -64,81 +67,74 @@ fn manual_attendance(emp: String) -> String {
         //let row_date = row.get::<time::Date, usize>(3).to_string();
         let row_date = match row.try_get::<time::Date, usize>(3) {
             Ok(date) => date.to_string(),
-            Err(e) => {
-                match e {
-                    sqlx::Error::ColumnNotFound(_) => {
-                        println!("Column not found");
-                        "error".to_string()
-                    }
-                    sqlx::Error::ColumnDecode { index, source } => {
-                        println!("Column decode error: {} at index {}", source, index);
-                        "error".to_string()
-                    }
-                    _ => {
-                        println!("Unknown error: {}", e);
-                        "error".to_string()
-                    }
+            Err(e) => match e {
+                sqlx::Error::ColumnNotFound(_) => {
+                    println!("Column not found");
+                    "error".to_string()
                 }
-            }
+                sqlx::Error::ColumnDecode { index, source } => {
+                    println!("Column decode error: {} at index {}", source, index);
+                    "error".to_string()
+                }
+                _ => {
+                    println!("Unknown error: {}", e);
+                    "error".to_string()
+                }
+            },
         };
         println!("Date: {}", row_date);
 
         //let row_time = row.get::<time::Time, usize>(4).to_string();
         let row_time = match row.try_get::<time::Time, usize>(4) {
             Ok(date) => date.to_string(),
-            Err(e) => {
-                match e {
-                    sqlx::Error::ColumnNotFound(_) => {
-                        println!("Column not found");
-                        "error".to_string()
-                    }
-                    sqlx::Error::ColumnDecode { index, source } => {
-                        println!("Column decode error: {} at index {}", source, index);
-                        "error".to_string()
-                    }
-                    _ => {
-                        println!("Unknown error: {}", e);
-                        "error".to_string()
-                    }
+            Err(e) => match e {
+                sqlx::Error::ColumnNotFound(_) => {
+                    println!("Column not found");
+                    "error".to_string()
                 }
-            }
+                sqlx::Error::ColumnDecode { index, source } => {
+                    println!("Column decode error: {} at index {}", source, index);
+                    "error".to_string()
+                }
+                _ => {
+                    println!("Unknown error: {}", e);
+                    "error".to_string()
+                }
+            },
         };
         println!("Time: {}", row_time);
 
         //let row_attendance_status = row.get::<u16, usize>(5);
         let row_attendance_status = match row.try_get::<u64, usize>(5) {
             Ok(status) => status.to_string(),
-            Err(e) => {
-                match e {
-                    sqlx::Error::ColumnNotFound(_) => {
-                        println!("Column not found");
-                        "error".to_string()
-                    }
-                    sqlx::Error::ColumnDecode { index, source } => {
-                        println!("Column decode error: {} at index {}", source, index);
-                        "error".to_string()
-                    }
-                    _ => {
-                        println!("Unknown error: {}", e);
-                        "error".to_string()
-                    }
+            Err(e) => match e {
+                sqlx::Error::ColumnNotFound(_) => {
+                    println!("Column not found");
+                    "error".to_string()
                 }
-            }
+                sqlx::Error::ColumnDecode { index, source } => {
+                    println!("Column decode error: {} at index {}", source, index);
+                    "error".to_string()
+                }
+                _ => {
+                    println!("Unknown error: {}", e);
+                    "error".to_string()
+                }
+            },
         };
         println!("Attendance Status: {}", row_attendance_status);
 
-
         json!({
-            "responsecode" : "success",
-            "body" : [
-                 row_emp_id,
-                 row_fname,
-                 row_lname,
-                 row_time,
-                 row_date,
-                 row_attendance_status,
-            ] 
-         })
+           "responsecode" : "success",
+           "body" : [
+                row_emp_id,
+                row_fname,
+                row_lname,
+                row_time,
+                row_date,
+                row_attendance_status,
+           ]
+        })
     } else {
         json!({
             "responsecode" : "failure",
@@ -180,9 +176,9 @@ fn start_identify(device: State<Note>) -> String {
             "body": "Device could not be opened. Please try plugging in your fingerprint scanner and restarting the app.",
         }).to_string();
     }
-    
+
     //let mut fun_result: Option<String> = Some(String::from(""));
-    let mut fun_result: Value = Default::default();
+    //let mut fun_result: Value = Default::default();
 
     // Get a list of all entries in the folder
     let entries = match fs::read_dir(
@@ -265,54 +261,56 @@ fn start_identify(device: State<Note>) -> String {
             return json!({
                 "responsecode": "failure",
                 "body": format!("Could not open fingerprint scanner. Error: {}", e.to_string()),
-            }).to_string();
+            })
+            .to_string();
         }
     };
 
     match fp_scanner.open_sync(None) {
         Ok(()) => {
             println!("Fingerprint scanner opened!");
-        },
+        }
         Err(e) => {
             return json!({
                 "responsecode": "failure",
                 "body": format!("Could not open fingerprint scanner. Error: {}", e.to_string()),
-            }).to_string();
+            })
+            .to_string();
         }
     };
 
     let mut new_print = FpPrint::new(&fp_scanner);
     println!("Please scan your fingerprint");
 
-    let print_identified = match fp_scanner
-        .identify_sync(
-            &fingerprints,
-            None,
-            Some(match_cb),
-            None,
-            Some(&mut new_print),
-        ) {
-            Ok(print) => print,
-            Err(e) => {
-                fp_scanner.close_sync(None).expect("Could not close the fingerprint scanner");
-                return json!({
+    let print_identified = match fp_scanner.identify_sync(
+        &fingerprints,
+        None,
+        Some(match_cb),
+        None,
+        Some(&mut new_print),
+    ) {
+        Ok(print) => print,
+        Err(e) => {
+            fp_scanner
+                .close_sync(None)
+                .expect("Could not close the fingerprint scanner");
+            return json!({
                     "responsecode": "failure",
                     "body": format!("Could not identify fingerprint due to an error: {}", e.to_string()),
                 }).to_string();
-            }
-        };
-        //.expect("Fingerprint could not be identified due to an error");
+        }
+    };
+    //.expect("Fingerprint could not be identified due to an error");
 
     match fp_scanner.close_sync(None) {
         Ok(()) => (),
         Err(e) => {
-                return json!({
+            return json!({
                 "responsecode": "failure",
                 "body": format!("Could not close the fingerprint scanner. Error: {}",&e.to_string()),
             }).to_string();
-        },
+        }
     }
-
 
     if print_identified.is_some() {
         let fprint = print_identified.expect("Print should be able to be unwrapped here");
@@ -332,7 +330,8 @@ fn start_identify(device: State<Note>) -> String {
                         let row_time = row.get::<time::Time, usize>(4).to_string();
                         let row_attendance_status = row.get::<u16, usize>(5);
 
-                        let msg = format!("\nAttendance recorded for {} {}\n",row_fname, row_lname);
+                        let msg =
+                            format!("\nAttendance recorded for {} {}\n", row_fname, row_lname);
 
                         println!("{}", msg);
 
@@ -346,17 +345,19 @@ fn start_identify(device: State<Note>) -> String {
                                 row_date,
                                 row_attendance_status,
                             ]
-                        }).to_string()
+                        })
+                        .to_string()
                     } else {
                         //show that attendance could not be recorded
                         println!("Attendance could not be recorded\n");
                         json!({
                             "responsecode": "failure",
                             "body": result.err().unwrap().to_string(),
-                        }).to_string()
+                        })
+                        .to_string()
                     }
                 })
-            },
+            }
             None => {
                 println!("No user associated with fingerprint"); //uuid did not contain a string (essentially None acts as a null value)
                 json!({
@@ -370,7 +371,8 @@ fn start_identify(device: State<Note>) -> String {
         json!({
             "responsecode": "failure",
             "body": "No matching fingerprint could be found.",
-        }).to_string()
+        })
+        .to_string()
     }
 }
 /*
@@ -393,7 +395,6 @@ fn start_identify(device: State<Note>) -> String {
 */
 
 async fn query_record_attendance(emp_id: &u64) -> Result<MySqlRow, String> {
-
     let database_url = match db_url() {
         Ok(url) => url,
         Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
@@ -409,22 +410,21 @@ async fn query_record_attendance(emp_id: &u64) -> Result<MySqlRow, String> {
     let result = match sqlx::query!("CALL record_attendance_by_empid(?)", emp_id)
         //.execute(&pool)
         .fetch_one(&pool)
-        .await {
-            Ok(result) => {
-                println!("Attendance recorded successfully");
-                result
-            },
-            Err(e) => {
-                match e {
-                    sqlx::Error::Database(e) => {
-                        return Err(e.message().to_string());
-                    },
-                    _ => {
-                        return Err(e.to_string());
-                    }
-                }
-            },
-        };
+        .await
+    {
+        Ok(result) => {
+            println!("Attendance recorded successfully");
+            result
+        }
+        Err(e) => match e {
+            sqlx::Error::Database(e) => {
+                return Err(e.message().to_string());
+            }
+            _ => {
+                return Err(e.to_string());
+            }
+        },
+    };
 
     // let uuid_query = match sqlx::query!("SELECT fprint_uuid from enrolled_fingerprints where emp_id = ?", emp_id)
     //     .fetch_one(&pool)
@@ -433,7 +433,7 @@ async fn query_record_attendance(emp_id: &u64) -> Result<MySqlRow, String> {
     //         Err(e) => return Err(e.to_string()),
     //     };
     //     //.expect("Could not retrieve uuid");
-        
+
     // let uuid = uuid_query.fprint_uuid;   //.get::<String, usize>(0);
 
     // println!("UUID: {}", uuid);
@@ -444,19 +444,18 @@ async fn query_record_attendance(emp_id: &u64) -> Result<MySqlRow, String> {
     //         Ok(row) => row,
     //         Err(e) => return Err(e.to_string()),
     //     };
-        //.expect("Could not retrieve latest attendance record");
+    //.expect("Could not retrieve latest attendance record");
 
     pool.close().await; //close connection to database
     Ok(result) //return from the function with no errors
 }
-
 
 // async fn employee_name_from_uuid(uuid: &str) -> String {
 //     dotenvy::dotenv().unwrap();
 //     let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap())
 //         .await
 //         .unwrap();
-//     let result = sqlx::query!(r#"SELECT enrolled_fingerprints.fprint_uuid AS "uuid", employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" 
+//     let result = sqlx::query!(r#"SELECT enrolled_fingerprints.fprint_uuid AS "uuid", employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname"
 //     FROM enrolled_fingerprints JOIN employee USING(emp_id) WHERE fprint_uuid = ?"#, uuid)
 //         .fetch_one(&pool)
 //         .await
@@ -473,7 +472,7 @@ async fn query_record_attendance(emp_id: &u64) -> Result<MySqlRow, String> {
 //     let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap())
 //         .await
 //         .unwrap();
-//     let result = sqlx::query!(//r#"SELECT production_staff.emp_id AS "emp_id", 
+//     let result = sqlx::query!(//r#"SELECT production_staff.emp_id AS "emp_id",
 //     //employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" FROM production_staff JOIN employee USING(emp_id) WHERE emp_id = ?"#, emp_id)
 //         r#"SELECT employee.emp_id AS "emp_id", employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" FROM employee WHERE role_code = 2 AND emp_id = ?"#, emp_id)
 //         .fetch_one(&pool)
@@ -504,7 +503,6 @@ pub fn match_cb(
                 .expect("Username could not be retrieved"),
         );
         println!("Matched");
-
     } else {
         //if matched_print is None (null value)
         //print that no fingerprint was matched with the scanned fingerprint
@@ -530,18 +528,19 @@ async fn record_attendance(uuid: &str) -> Result<MySqlRow, String> {
     //query the record_attendance stored procedure (non-manual attendance)
     match sqlx::query!("CALL record_attendance(?)", uuid)
         .execute(&pool)
-        .await{
-            Ok(_) => (),
-            Err(e) => {
-                return Err(e.to_string());
-            }
-        };
-    
+        .await
+    {
+        Ok(_) => (),
+        Err(e) => {
+            return Err(e.to_string());
+        }
+    };
+
     let row = sqlx::query!("CALL get_latest_attendance_record(?)", uuid)
         .fetch_one(&pool)
         .await;
 
-    pool.close().await; //close connection to database    
+    pool.close().await; //close connection to database
 
     if row.is_err() {
         return Err(row.err().unwrap().to_string());
@@ -591,7 +590,10 @@ fn db_url() -> Result<String, String> {
         Err(_) => return Err("DB_PARAMS not set".to_string()),
     };
 
-    let database_url = format!("{}://{}:{}@{}:{}/{}?{}",db_type,db_username,db_password,hostname,db_port,db_name,db_params);
+    let database_url = format!(
+        "{}://{}:{}@{}:{}/{}?{}",
+        db_type, db_username, db_password, hostname, db_port, db_name, db_params
+    );
     Ok(database_url)
 }
 
@@ -634,7 +636,10 @@ async fn main() {
     tauri::Builder::default()
         .setup(|_app| Ok(()))
         .manage(Note::default())
-        .invoke_handler(tauri::generate_handler![greet, start_identify, manual_attendance])
+        .invoke_handler(tauri::generate_handler![
+            start_identify,
+            manual_attendance
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
