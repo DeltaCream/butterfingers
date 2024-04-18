@@ -17,7 +17,7 @@ let resultString = document.querySelector("#result-body");
 let btnIdentify = document.querySelector("#identify");
 let btnManual = document.querySelector("#manual");
 const revert = 2000; // time until text revert in ms
-const imageURL = "http://10.18.3.172/attendance/images/"; // change ip address
+const imageURL = "http://localhost/attendance/images/"; // change ip address
 
 // identify fingerprint
 async function start_identify() {
@@ -54,6 +54,8 @@ async function start_identify() {
 
       revertText();
     }
+
+    document.querySelector("#emp_id").value = "";
   } catch (err) {
     resultString.innerHTML = "<span class=\"error\">" + result.body + "</span>";
     console.error("Error invoking start_identify: " + result.body);
@@ -101,6 +103,8 @@ async function manual_attendance() {
 
       revertText();
     }
+
+    document.querySelector("#emp_id").value = "";
 
   } catch (err) {
     resultString.innerHTML = "<span class=\"error\">", result.body, "</span>";
