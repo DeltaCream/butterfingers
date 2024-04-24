@@ -167,7 +167,7 @@ fn manual_attendance(emp: String) -> String {
 */
 
 #[tauri::command]
-fn start_identify(device: State<Note>) -> String {
+fn start_identify(device: State<ManagedFpDevice>, fingerprints: State<ManagedFprintList>) -> String {
     println!("entering verify mode!");
 
     if device.0.is_none() {
@@ -181,64 +181,64 @@ fn start_identify(device: State<Note>) -> String {
     //let mut fun_result: Value = Default::default();
 
     // Get a list of all entries in the folder
-    let entries = match fs::read_dir(
-        dirs::home_dir()
-            .expect("Home directory could not be found")
-            .join("print/"),
-    ) {
-        Ok(entries) => entries,
-        Err(e) => {
-            return json!({
-                "responsecode": "failure",
-                "body": format!("Could not read the directory to retrieve files pertaining to the stored fingerprints. Error: {}", e.to_string())
-            }).to_string();
-        }
-    };
+    // let entries = match fs::read_dir(
+    //     dirs::home_dir()
+    //         .expect("Home directory could not be found")
+    //         .join("print/"),
+    // ) {
+    //     Ok(entries) => entries,
+    //     Err(e) => {
+    //         return json!({
+    //             "responsecode": "failure",
+    //             "body": format!("Could not read the directory to retrieve files pertaining to the stored fingerprints. Error: {}", e.to_string())
+    //         }).to_string();
+    //     }
+    // };
 
     // Extract the filenames from the directory entries and store them in a vector
-    let file_names: Vec<String> = entries
-        .filter_map(|entry| {
-            let path = entry.ok()?.path();
-            if path.is_file() {
-                path.file_name()?.to_str().map(|s| s.to_owned())
-            } else {
-                None
-            }
-        })
-        .collect();
+    // let file_names: Vec<String> = entries
+    //     .filter_map(|entry| {
+    //         let path = entry.ok()?.path();
+    //         if path.is_file() {
+    //             path.file_name()?.to_str().map(|s| s.to_owned())
+    //         } else {
+    //             None
+    //         }
+    //     })
+    //     .collect();
 
     // Iterate over the file names
-    let fingerprints = file_names
-        .iter()
-        .map(|filename| {
-            //for every file name
-            //go to the directory where the file will be placed
-            let fpprint_file = OpenOptions::new()
-                .read(true)
-                .open(
-                    dirs::home_dir()
-                        .expect("Home directory could not be found")
-                        .join(format!("print/{}", filename)),
-                )
-                .expect("Could not read the fingerprint file");
+    // let fingerprints = file_names
+    //     .iter()
+    //     .map(|filename| {
+    //         //for every file name
+    //         //go to the directory where the file will be placed
+    //         let fpprint_file = OpenOptions::new()
+    //             .read(true)
+    //             .open(
+    //                 dirs::home_dir()
+    //                     .expect("Home directory could not be found")
+    //                     .join(format!("print/{}", filename)),
+    //             )
+    //             .expect("Could not read the fingerprint file");
 
-            //create a buffer for the files
-            let mut reader = BufReader::new(fpprint_file);
-            let mut buffer = Vec::new();
+    //         //create a buffer for the files
+    //         let mut reader = BufReader::new(fpprint_file);
+    //         let mut buffer = Vec::new();
 
-            //read file into buffer vector
-            reader
-                .read_to_end(&mut buffer)
-                .expect("Could not retrieve contents of file");
+    //         //read file into buffer vector
+    //         reader
+    //             .read_to_end(&mut buffer)
+    //             .expect("Could not retrieve contents of file");
 
-            //deserialize the fingerprint stored in the file
-            let deserialized_print = FpPrint::deserialize(&buffer);
+    //         //deserialize the fingerprint stored in the file
+    //         let deserialized_print = FpPrint::deserialize(&buffer);
 
-            //retrieve the enrolled print from deserialized_print
-            deserialized_print.expect("Could not unwrap the deserialized print")
-            //let enrolled_print = deserialized_print.expect("Could not unwrap the deserialized print");
-        })
-        .collect::<Vec<FpPrint>>();
+    //         //retrieve the enrolled print from deserialized_print
+    //         deserialized_print.expect("Could not unwrap the deserialized print")
+    //         //let enrolled_print = deserialized_print.expect("Could not unwrap the deserialized print");
+    //     })
+    //     .collect::<Vec<FpPrint>>();
 
     // for (i, fingerprint) in fingerprints.iter().enumerate() {
     //     //print the fingeprint number (on the array of fingerprints returned) and its corresponding username
@@ -281,9 +281,18 @@ fn start_identify(device: State<Note>) -> String {
 
     let mut new_print = FpPrint::new(&fp_scanner);
     println!("Please scan your fingerprint");
-
+    let fprint_list = match fingerprints.0.as_ref().unwrap().lock() {
+        Ok(fprint_list) => fprint_list,
+        Err(e) => {
+            return json!({
+                "responsecode": "failure",
+                "body": format!("Could not parse list of fingerprints. Error: {}", e.to_string()),
+            })
+            .to_string();
+        }
+    };
     let print_identified = match fp_scanner.identify_sync(
-        &fingerprints,
+        &fprint_list,
         None,
         Some(match_cb),
         None,
@@ -312,15 +321,15 @@ fn start_identify(device: State<Note>) -> String {
         }
     }
 
-    if print_identified.is_some() {
+    if print_identified.is_some() { //put another check sa db side if the preloaded fprint is in the db
         let fprint = print_identified.expect("Print should be able to be unwrapped here");
-        let uuid = fprint.username();
-        match uuid {
-            Some(uuid) => {
+        let emp_id = fprint.username();
+        match emp_id {
+            Some(emp_id) => {
                 futures::executor::block_on(async {
-                    println!("UUID of the fingerprint: {}", uuid);
+                    println!("emp_id of the fingerprint: {}", emp_id);
                     println!("Before recording attendance");
-                    let result = record_attendance(&uuid).await;
+                    let result = record_attendance(&emp_id).await;
                     if result.is_ok() {
                         let row = result.unwrap();
                         let row_emp_id = row.get::<u64, usize>(0);
@@ -510,7 +519,7 @@ pub fn match_cb(
     }
 }
 
-async fn record_attendance(uuid: &str) -> Result<MySqlRow, String> {
+async fn record_attendance(emp_id: &str) -> Result<MySqlRow, String> {
     println!("recording attendance");
     //setup involving the .env file
 
@@ -526,7 +535,7 @@ async fn record_attendance(uuid: &str) -> Result<MySqlRow, String> {
     };
 
     //query the record_attendance stored procedure (non-manual attendance)
-    match sqlx::query!("CALL record_attendance(?)", uuid)
+    match sqlx::query!("CALL record_attendance_by_empid(?)", emp_id)
         .execute(&pool)
         .await
     {
@@ -536,7 +545,7 @@ async fn record_attendance(uuid: &str) -> Result<MySqlRow, String> {
         }
     };
 
-    let row = sqlx::query!("CALL get_latest_attendance_record(?)", uuid)
+    let row = sqlx::query!("CALL get_latest_attendance_record(?)", emp_id)
         .fetch_one(&pool)
         .await;
 
@@ -547,6 +556,39 @@ async fn record_attendance(uuid: &str) -> Result<MySqlRow, String> {
     }
 
     Ok(row.ok().unwrap())
+}
+
+async fn obtain_fingerprints_from_db() -> Result<Vec<FpPrint>, String> {
+    println!("recording attendance");
+    //setup involving the .env file
+
+    let database_url = match db_url() {
+        Ok(url) => url,
+        Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
+    };
+
+    //connect to the database
+    let pool = match MySqlPool::connect(&database_url).await {
+        Ok(pool) => pool,
+        Err(e) => return Err(e.to_string()),
+    };
+
+    let row = sqlx::query!("SELECT fprint FROM enrolled_fingerprints")
+        .fetch_all(&pool)
+        .await;
+
+    pool.close().await; //close connection to database
+    if row.is_err() {
+        return Err(row.err().unwrap().to_string());
+    }
+    
+    let raw_fprints = row.ok().unwrap();
+
+    let fprint_list = raw_fprints.iter().map(|fprint_file|{
+        let deserialized_print = FpPrint::deserialize(&fprint_file.fprint);
+        deserialized_print.unwrap()
+    }).collect::<Vec<FpPrint>>();
+    Ok(fprint_list)
 }
 
 fn db_url() -> Result<String, String> {
@@ -613,15 +655,27 @@ fn db_url() -> Result<String, String> {
 // unsafe impl Send for Wrapper {}
 // unsafe impl Sync for Wrapper {}
 
-struct Note(Option<Mutex<FpDevice>>);
+struct ManagedFpDevice(Option<Mutex<FpDevice>>);
+struct ManagedFprintList(Option<Mutex<Vec<FpPrint>>>);
 
-impl Default for Note {
+impl Default for ManagedFpDevice {
     fn default() -> Self {
         let context = FpContext::new();
         match context.devices().len() {
             0 => Self(None),
             _ => Self(Some(Mutex::new(context.devices().remove(0)))),
         }
+    }
+}
+
+impl Default for ManagedFprintList {
+    fn default() -> Self {
+        Self(Some(Mutex::new(
+            futures::executor::block_on(async {
+                obtain_fingerprints_from_db().await.unwrap()
+             })
+            
+        )))
     }
 }
 
@@ -635,7 +689,8 @@ impl Default for Note {
 async fn main() {
     tauri::Builder::default()
         .setup(|_app| Ok(()))
-        .manage(Note::default())
+        .manage(ManagedFpDevice::default())
+        .manage(ManagedFprintList::default())
         .invoke_handler(tauri::generate_handler![
             start_identify,
             manual_attendance
