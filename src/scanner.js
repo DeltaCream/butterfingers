@@ -36,7 +36,7 @@ async function start_identify() {
       document.querySelector("#employee-id").textContent = data[0];
       document.querySelector("#date").textContent = data[4];
       document.querySelector("#time").textContent = data[3];
-      if (data[5] === "in") {
+      if (data[5] === 1) {
         document.querySelector("#code").textContent = "Time-In";
       } else {
         document.querySelector("#code").textContent = "Time-Out";
