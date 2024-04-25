@@ -1,16 +1,468 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
+use std::sync::Arc;
+use sqlx::Row;
 use serde_json::json;
 use tauri::State;
 use std::{env, sync::Mutex};
-
 use libfprint_rs::{FpContext, FpDevice, FpPrint};
-
-use sqlx::Row;
-
 use sqlx::{mysql::MySqlRow, types::time, MySqlPool};
 
+// Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
+
+// #[derive(Serialize, Deserialize)]
+// struct Employee {
+//     emp_id: u64,
+//     fname: String,
+//     lname: String,
+// }
+
+#[tauri::command]
+async fn enumerate_unenrolled_employees() -> String {
+    let database_url = match db_url() {
+        Ok(url) => url,
+        Err(e) => {
+            return json!({
+              "error": format!("DATABASE_URL not set: {}", e)
+            })
+            .to_string()
+        }
+    };
+
+    println!("database_url: {}", database_url);
+
+    let pool = match MySqlPool::connect(&database_url).await {
+        Ok(pool) => pool,
+        Err(e) => {
+            return json!({
+              "error": format!("Could not connect to database: {}",e)
+            })
+            .to_string()
+        }
+    };
+
+    let result = match sqlx::query!("CALL enumerate_unenrolled_employees_json")
+        .fetch_all(&pool)
+        .await
+    {
+        Ok(result) => result,
+        Err(_) => {
+            return json!({
+              "error" : "Failed to execute query"
+            })
+            .to_string()
+        }
+    };
+
+    pool.close().await;
+
+    //println!("Found {} unenrolled employees", result.len());
+
+    if result.is_empty() {
+        println!("No unenrolled employees found");
+        return json!({
+          "error" : "No unenrolled employees found"
+        })
+        .to_string();
+    }
+
+    //println!("{:?}", result.get(0).unwrap());
+
+    let mut unenrolled: String = String::from("");
+
+    for row in result.iter() {
+        let json = row.get::<serde_json::Value, usize>(0);
+        unenrolled = json.to_string();
+    }
+
+    unenrolled
+}
+
+#[tauri::command]
+fn enroll_proc(emp: String, device: State<ManagedFpDevice>) -> String { //function that is called when scanning a fingerprint for enrollment
+    let emp_num = match emp.trim().parse::<u64>() {
+        Ok(num) => num,
+        Err(_) => {
+            return json!({
+                "responsecode" : "failure",
+                "body" : "Invalid employee ID",
+            })
+            .to_string()
+        }
+    };
+
+    /*
+    * Get emp_id and check if it already is enrolled.
+    */
+
+    // let result = match futures::executor::block_on(async {
+    //   query_count(emp_num).await
+    // }) {
+    //   Ok(result) => result,
+    //   Err(e) => return json!({
+    //     "responsecode" : "failure",
+    //     "body" : format!("Failed to execute query: {}",e),
+    //   }).to_string()
+    // };
+
+    let fp_scanner = match device.0.as_ref().unwrap().lock() {
+        Ok(fp_scanner) => fp_scanner,
+        Err(_) => {
+            return json!({
+              "responsecode" : "failure",
+              "body" : "Could not get device",
+            })
+            .to_string()
+        }
+    };
+
+    //open the fingerprint scanner
+    match fp_scanner.open_sync(None) {
+        Ok(_) => (),
+        Err(_) => {
+            return json!({
+              "responsecode" : "failure",
+              "body" : "Could not open device",
+            })
+            .to_string()
+        }
+    }
+
+    //create a template for the user
+    let template = FpPrint::new(&fp_scanner);
+
+    //generates a random uuid
+    //let uuid = Uuid::new_v4();
+
+    //OUTDATED: set the username of the template to the uuid generated
+    //NEW: set the username of the template to the employee ID to which the fingerprint belongs to
+    template.set_username(&emp.to_string());
+
+    println!(
+        "Username of the fingerprint: {}",
+        template
+            .username()
+            .expect("Username should be included here")
+    );
+
+    let counter = Arc::new(Mutex::new(0)); //a counter for the current scanning phase of the enrollment process
+
+    let new_fprint = match fp_scanner.enroll_sync(template, None, Some(enroll_cb), None) {
+        Ok(new_fprint) => new_fprint,
+        Err(_) => {
+            fp_scanner
+                .close_sync(None)
+                .expect("Could not close fingerprint scanner");
+            return json!({
+              "responsecode" : "failure",
+              "body" : "Could not enroll fingerprint",
+            })
+            .to_string();
+        }
+    };
+
+    println!("Fingerprint has been scanned");
+
+    //close the fingerprint scanner
+    match fp_scanner.close_sync(None) {
+        Ok(_) => (),
+        Err(_) => {
+            return json!({
+              "responsecode" : "failure",
+              "body" : "Could not close fingerprint scanner",
+            })
+            .to_string();
+        }
+    } //.expect("Device could not be closed");
+
+    println!("Total enroll stages: {}", counter.lock().unwrap());
+
+    //serialize the fingerprint
+    let new_fprint = match new_fprint.serialize() {
+        Ok(new_fprint) => new_fprint.to_owned(),
+        Err(_) => {
+            return json!({
+              "responsecode" : "failure",
+              "body" : "Could not serialize fingerprint",
+            })
+            .to_string();
+        }
+    };
+
+    futures::executor::block_on(async {
+        match save_fprint_to_db(&emp_num, new_fprint).await {
+            Ok(_insert) => {
+                println!("Fingerprint has been saved in the database");
+                json!({
+                  "responsecode" : "success",
+                  "body" : "Successfully enrolled fingerprint",
+                })
+                .to_string()
+            }
+            Err(result) => json!({
+              "responsecode" : "failure",
+              "body" : result.to_string(),
+            })
+            .to_string(),
+        }
+    })
+}
+
+// async fn query_count(emp_id: u64) -> Result<(), String> {
+
+//   let database_url = match db_url() {
+//     Ok(url) => url,
+//     Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
+//   };
+
+//   let pool = match MySqlPool::connect(&database_url).await {
+//     Ok(pool) => pool,
+//     Err(e) => return Err(e.to_string()),
+//   };
+
+//   let record = match sqlx::query!("SELECT COUNT(*) AS count_result FROM enrolled_fingerprints WHERE EMP_ID = ?", emp_id)
+//     .fetch_one(&pool)
+//     .await {
+//       Ok(result) => {
+//         if result.count_result == 1 {
+//           pool.close().await;
+//           return Err(json!({
+//             "responsecode" : "failure",
+//             "body" : "Employee already enrolled",
+//           }).to_string());
+//         }
+//       },
+//       Err(e) => return Err(e.to_string()),
+//     };
+
+//   pool.close().await; //close connection to database
+//   Ok(())
+// }
+
+async fn save_fprint_to_db(emp_id: &u64, fprint: Vec<u8>) -> Result<(), String> { //save a fingerprint in the database to be associated with an employee id
+    let database_url = match db_url() {
+        Ok(url) => url,
+        Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
+    };
+
+    //connect to the database
+    let pool = match MySqlPool::connect(&database_url).await {
+        Ok(pool) => pool,
+        Err(e) => return Err(e.to_string()),
+    };
+
+    //query the record_attendance_by_empid stored procedure (manual attendance)
+    match sqlx::query!("CALL save_fprint(?,?)", emp_id, fprint)
+        .execute(&pool)
+        .await
+    {
+        Ok(row) => {
+            pool.close().await; //close connection to database
+            match row.rows_affected() {
+                //check how many rows were affected by the stored procedure that was previously queried
+                0 => println!("No rows affected"),
+                _ => println!("Rows affected: {}", row.rows_affected()),
+            }
+        }
+        Err(e) => {
+            pool.close().await; //close connection to database before returning error
+            return Err(e.to_string());
+        }
+    };
+    //.expect("Could not retrieve latest attendance record");
+
+    //pool.close().await;
+    Ok(()) //return from the function with no errors
+}
+
+fn db_url() -> Result<String, String> {
+    // match dotenvy::dotenv() {
+    //     Ok(_) => (),
+    //     Err(e) => return Err(format!("Failed to load .env file: {}", e)),
+    // }
+
+    let db_type = dotenvy_macro::dotenv!("DB_TYPE");
+    // {
+    //     Ok(db_type) => db_type,
+    //     Err(_) => return Err("DB_TYPE not set".to_string()),
+    // };
+
+    let db_username = dotenvy_macro::dotenv!("DB_USERNAME");
+    // {
+    //     Ok(username) => username,
+    //     Err(_) => return Err("DB_USERNAME not set".to_string()),
+    // };
+
+    let db_password = dotenvy_macro::dotenv!("DB_PASSWORD");
+    //  {
+    //     Ok(password) => password,
+    //     Err(_) => return Err("DB_PASSWORD not set".to_string()),
+    // };
+
+    let hostname = dotenvy_macro::dotenv!("HOSTNAME");
+    // {
+    //     Ok(name) => name,
+    //     Err(_) => return Err("HOSTNAME not set".to_string()),
+    // };
+
+    let db_port = dotenvy_macro::dotenv!("DB_PORT");
+    // {
+    //     Ok(port) => port,
+    //     Err(_) => return Err("DB_PORT not set".to_string()),
+    // };
+
+    let db_name = dotenvy_macro::dotenv!("DB_NAME");
+    // {
+    //     Ok(name) => name,
+    //     Err(_) => return Err("DB_NAME not set".to_string()),
+    // };
+
+    let db_params = dotenvy_macro::dotenv!("DB_PARAMS"); 
+    // {
+    //     Ok(params) => params,
+    //     Err(_) => return Err("DB_PARAMS not set".to_string()),
+    // };
+
+    let database_url = format!(
+        "{}://{}:{}@{}:{}/{}?{}",
+        db_type, db_username, db_password, hostname, db_port, db_name, db_params
+    );
+    Ok(database_url)
+}
+
+
+pub fn enroll_cb(
+    _device: &FpDevice,
+    enroll_stage: i32,
+    _print: Option<FpPrint>,
+    _error: Option<libfprint_rs::GError>,
+    _data: &Option<i32>,
+) {
+    //print enroll stage of the enroll function
+    println!("Enroll_cb Enroll stage: {}", enroll_stage);
+}
+
+#[tauri::command]
+fn get_device_enroll_stages(device: State<ManagedFpDevice>) -> i32 {
+    return device.0.as_ref().unwrap().lock().unwrap().nr_enroll_stage();
+}
+
+struct ManagedFpDevice(Option<Mutex<FpDevice>>);
+struct ManagedFprintList(Option<Mutex<Vec<FpPrint>>>);
+
+impl Default for ManagedFpDevice {
+    fn default() -> Self {
+        let context = FpContext::new();
+        match context.devices().len() {
+            0 => Self(None),
+            _ => Self(Some(Mutex::new(context.devices().remove(0)))),
+        }
+    }
+}
+
+impl Default for ManagedFprintList {
+    fn default() -> Self {
+        Self(Some(Mutex::new(Vec::new())))
+    }
+}
+
+impl ManagedFprintList {
+    async fn obtain_fingerprints_from_db(&self) -> Result<String, String> {
+        let database_url = match db_url() {
+            Ok(url) => url,
+            Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
+        };
+    
+        //connect to the database
+        let pool = match MySqlPool::connect(&database_url).await {
+            Ok(pool) => pool,
+            Err(e) => return Err(e.to_string()),
+        };
+    
+        let row = sqlx::query!("SELECT fprint FROM enrolled_fingerprints")
+            .fetch_all(&pool)
+            .await;
+    
+        pool.close().await; //close connection to database
+    
+        if row.is_err() {
+            return Err(row.err().unwrap().to_string());
+        }
+    
+        let raw_fprints = row.ok().unwrap();
+        let mut managed_fprint_list = self.0.as_ref().unwrap().lock().unwrap();
+        
+        if managed_fprint_list.is_empty() {
+            println!("size of fprint list: {}", managed_fprint_list.len());
+            for fprint_file in raw_fprints {
+                let deserialized_print = match FpPrint::deserialize(&fprint_file.fprint) {
+                    Ok(deserialized_print) => deserialized_print,
+                    Err(e) => {
+                        return Err(format!(
+                            "Could not deserialize one of the fingerprints: {}",
+                            e
+                        ));
+                    }
+                };
+                managed_fprint_list.push(deserialized_print);
+            }
+        } else {
+            println!("size of fprint list before de-allocation: {}", managed_fprint_list.len());
+            managed_fprint_list.clear();
+            println!("size of fprint list after de-allocation: {}", managed_fprint_list.len());
+            assert!(managed_fprint_list.is_empty(), "vector is not empty!");
+            //let mut fprint_list = Vec::new();
+            for fprint_file in raw_fprints {
+                let deserialized_print = match FpPrint::deserialize(&fprint_file.fprint) {
+                    Ok(deserialized_print) => deserialized_print,
+                    Err(e) => {
+                        return Err(format!(
+                            "Could not deserialize one of the fingerprints: {}",
+                            e
+                        ));
+                    }
+                };
+                managed_fprint_list.push(deserialized_print);
+            }
+            //*managed_fprint_list = fprint_list;
+        }
+
+        //let mut fprint_list = Vec::new(); //ideally should work similar to above
+        // for fprint_file in raw_fprints {
+        //     let deserialized_print = match FpPrint::deserialize(&fprint_file.fprint) {
+        //         Ok(deserialized_print) => deserialized_print,
+        //         Err(e) => {
+        //             return Err(format!(
+        //                 "Could not deserialize one of the fingerprints: {}",
+        //                 e
+        //             )); //modified to early return in case one of the fingerprints cannot be deserialized
+        //         }
+        //     };
+        //     fprint_list.push(deserialized_print);
+        // }
+    
+        // self.0 = Some(Mutex::new(fprint_list));
+        Ok(String::from("Fingerprints Successfully loaded!"))
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+    tauri::Builder::default()
+        .setup(|_app| Ok(()))
+        .manage(ManagedFpDevice::default())
+        .manage(ManagedFprintList::default())
+        .invoke_handler(tauri::generate_handler![
+            enumerate_unenrolled_employees,
+            enroll_proc,
+            get_device_enroll_stages,
+            start_identify, manual_attendance, load_fingerprints
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+//attendance related functions
 #[tauri::command]
 fn load_fingerprints(fingerprints: State<ManagedFprintList>) -> String {
     let result = match futures::executor::block_on(async { 
@@ -125,27 +577,6 @@ fn manual_attendance(emp: String) -> String {
 
     output.to_string()
 }
-
-/*
-{
-    "responsecode": "success",
-    "body": [
-        row_emp_id,
-        row_fname,
-        row_lname,
-        row_time,
-        row_date,
-        row_attendance_status,
-    ]
-}
-*/
-
-/*
-{
-    "responsecode": "failure",
-    "body": "thingy",
-}
-*/
 
 #[tauri::command]
 fn start_identify(
@@ -300,27 +731,6 @@ fn start_identify(
     }
 }
 
-/* Below are the sample json responses that can be returned (success and failure respectively):
-{
-    "responsecode": "success",
-    "body": [
-        "emp_id",
-        "fname",
-        "lname",
-        "time",
-        "date",
-        "attendance_status"
-    ]
-}
-*/
-
-/*
-{
-    "responsecode": "failure",
-    "body": "thingy",
-}
-*/
-
 //function below is a callback function that is called when a scanned fingerprint is to be matched with previously enrolled fingerprints
 pub fn match_cb(
     _device: &FpDevice,
@@ -378,263 +788,3 @@ async fn record_attendance(emp_id: &str) -> Result<MySqlRow, String> {
 
     Ok(row)
 }
-
-
-
-fn db_url() -> Result<String, String> {
-    // match dotenvy::dotenv() {
-    //     Ok(_) => (),
-    //     Err(e) => return Err(format!("Failed to load .env file: {}", e)),
-    // }
-
-    let db_type = dotenvy_macro::dotenv!("DB_TYPE");
-    // {
-    //     Ok(db_type) => db_type,
-    //     Err(_) => return Err("DB_TYPE not set".to_string()),
-    // };
-
-    let db_username = dotenvy_macro::dotenv!("DB_USERNAME");
-    // {
-    //     Ok(username) => username,
-    //     Err(_) => return Err("DB_USERNAME not set".to_string()),
-    // };
-
-    let db_password = dotenvy_macro::dotenv!("DB_PASSWORD");
-    //  {
-    //     Ok(password) => password,
-    //     Err(_) => return Err("DB_PASSWORD not set".to_string()),
-    // };
-
-    let hostname = dotenvy_macro::dotenv!("HOSTNAME");
-    // {
-    //     Ok(name) => name,
-    //     Err(_) => return Err("HOSTNAME not set".to_string()),
-    // };
-
-    let db_port = dotenvy_macro::dotenv!("DB_PORT");
-    // {
-    //     Ok(port) => port,
-    //     Err(_) => return Err("DB_PORT not set".to_string()),
-    // };
-
-    let db_name = dotenvy_macro::dotenv!("DB_NAME");
-    // {
-    //     Ok(name) => name,
-    //     Err(_) => return Err("DB_NAME not set".to_string()),
-    // };
-
-    let db_params = dotenvy_macro::dotenv!("DB_PARAMS"); 
-    // {
-    //     Ok(params) => params,
-    //     Err(_) => return Err("DB_PARAMS not set".to_string()),
-    // };
-
-    let database_url = format!(
-        "{}://{}:{}@{}:{}/{}?{}",
-        db_type, db_username, db_password, hostname, db_port, db_name, db_params
-    );
-    Ok(database_url)
-}
-
-struct ManagedFpDevice(Option<Mutex<FpDevice>>);
-struct ManagedFprintList(Option<Mutex<Vec<FpPrint>>>);
-
-impl Default for ManagedFpDevice {
-    fn default() -> Self {
-        let context = FpContext::new();
-        match context.devices().len() {
-            0 => Self(None),
-            _ => Self(Some(Mutex::new(context.devices().remove(0)))),
-        }
-    }
-}
-
-impl Default for ManagedFprintList {
-    fn default() -> Self {
-        Self(Some(Mutex::new(Vec::new())))
-    }
-}
-
-impl ManagedFprintList {
-    async fn obtain_fingerprints_from_db(&self) -> Result<String, String> {
-        let database_url = match db_url() {
-            Ok(url) => url,
-            Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
-        };
-    
-        //connect to the database
-        let pool = match MySqlPool::connect(&database_url).await {
-            Ok(pool) => pool,
-            Err(e) => return Err(e.to_string()),
-        };
-    
-        let row = sqlx::query!("SELECT fprint FROM enrolled_fingerprints")
-            .fetch_all(&pool)
-            .await;
-    
-        pool.close().await; //close connection to database
-    
-        if row.is_err() {
-            return Err(row.err().unwrap().to_string());
-        }
-    
-        let raw_fprints = row.ok().unwrap();
-        let mut managed_fprint_list = self.0.as_ref().unwrap().lock().unwrap();
-        
-        if managed_fprint_list.is_empty() {
-            println!("size of fprint list: {}", managed_fprint_list.len());
-            for fprint_file in raw_fprints {
-                let deserialized_print = match FpPrint::deserialize(&fprint_file.fprint) {
-                    Ok(deserialized_print) => deserialized_print,
-                    Err(e) => {
-                        return Err(format!(
-                            "Could not deserialize one of the fingerprints: {}",
-                            e
-                        ));
-                    }
-                };
-                managed_fprint_list.push(deserialized_print);
-            }
-        } else {
-            println!("size of fprint list before de-allocation: {}", managed_fprint_list.len());
-            managed_fprint_list.clear();
-            println!("size of fprint list after de-allocation: {}", managed_fprint_list.len());
-            assert!(managed_fprint_list.is_empty(), "vector is not empty!");
-            //let mut fprint_list = Vec::new();
-            for fprint_file in raw_fprints {
-                let deserialized_print = match FpPrint::deserialize(&fprint_file.fprint) {
-                    Ok(deserialized_print) => deserialized_print,
-                    Err(e) => {
-                        return Err(format!(
-                            "Could not deserialize one of the fingerprints: {}",
-                            e
-                        ));
-                    }
-                };
-                managed_fprint_list.push(deserialized_print);
-            }
-            //*managed_fprint_list = fprint_list;
-        }
-
-        //let mut fprint_list = Vec::new(); //ideally should work similar to above
-        // for fprint_file in raw_fprints {
-        //     let deserialized_print = match FpPrint::deserialize(&fprint_file.fprint) {
-        //         Ok(deserialized_print) => deserialized_print,
-        //         Err(e) => {
-        //             return Err(format!(
-        //                 "Could not deserialize one of the fingerprints: {}",
-        //                 e
-        //             )); //modified to early return in case one of the fingerprints cannot be deserialized
-        //         }
-        //     };
-        //     fprint_list.push(deserialized_print);
-        // }
-    
-        // self.0 = Some(Mutex::new(fprint_list));
-        Ok(String::from("Fingerprints Successfully loaded!"))
-    }
-}
-
-#[tokio::main]
-async fn main() {
-    env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
-    tauri::Builder::default()
-        .setup(|_app| Ok(()))
-        .manage(ManagedFpDevice::default())
-        .manage(ManagedFprintList::default())
-        .invoke_handler(tauri::generate_handler![start_identify, manual_attendance, load_fingerprints])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
-}
-
-// async fn query_record_attendance(emp_id: &u64) -> Result<MySqlRow, String> {
-//     //record attendance by emp_id (u64 type, manual attendance)
-//     let database_url = match db_url() {
-//         Ok(url) => url,
-//         Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
-//     };
-
-//     //connect to the database
-//     let pool = match MySqlPool::connect(&database_url).await {
-//         Ok(pool) => pool,
-//         Err(e) => return Err(e.to_string()),
-//     };
-
-//     //query the record_attendance_by_empid stored procedure (manual attendance)
-//     let result = match sqlx::query!("CALL record_attendance_by_empid(?)", emp_id)
-//         //.execute(&pool)
-//         .fetch_one(&pool)
-//         .await
-//     {
-//         Ok(result) => {
-//             println!("Attendance recorded successfully");
-//             result
-//         }
-//         Err(e) => match e {
-//             sqlx::Error::Database(e) => {
-//                 return Err(e.message().to_string());
-//             }
-//             _ => {
-//                 return Err(e.to_string());
-//             }
-//         },
-//     };
-
-// let uuid_query = match sqlx::query!("SELECT fprint_uuid from enrolled_fingerprints where emp_id = ?", emp_id)
-//     .fetch_one(&pool)
-//     .await {
-//         Ok(uuid) => uuid,
-//         Err(e) => return Err(e.to_string()),
-//     };
-//     //.expect("Could not retrieve uuid");
-
-// let uuid = uuid_query.fprint_uuid;   //.get::<String, usize>(0);
-
-// println!("UUID: {}", uuid);
-
-// let row = match sqlx::query!("CALL get_latest_attendance_record(?)", uuid)
-//     .fetch_one(&pool)
-//     .await {
-//         Ok(row) => row,
-//         Err(e) => return Err(e.to_string()),
-//     };
-//.expect("Could not retrieve latest attendance record");
-
-//     pool.close().await; //close connection to database
-//     Ok(result) //return from the function with no errors
-// }
-
-// async fn employee_name_from_uuid(uuid: &str) -> String {
-//     dotenvy::dotenv().unwrap();
-//     let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap())
-//         .await
-//         .unwrap();
-//     let result = sqlx::query!(r#"SELECT enrolled_fingerprints.fprint_uuid AS "uuid", employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname"
-//     FROM enrolled_fingerprints JOIN employee USING(emp_id) WHERE fprint_uuid = ?"#, uuid)
-//         .fetch_one(&pool)
-//         .await
-//         .expect("Could not retrieve employee name from uuid");
-//     pool.close().await;
-//     match (result.fname, result.mname, result.lname) {
-//         (fname, Some(mname), lname) => format!("{} {} {}", fname, mname, lname),
-//         (fname, None, lname) => format!("{} {}", fname, lname),
-//     }
-// }
-
-// async fn employee_name_from_empid(emp_id: &u64) -> String {
-//     dotenvy::dotenv().unwrap();
-//     let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap())
-//         .await
-//         .unwrap();
-//     let result = sqlx::query!(//r#"SELECT production_staff.emp_id AS "emp_id",
-//     //employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" FROM production_staff JOIN employee USING(emp_id) WHERE emp_id = ?"#, emp_id)
-//         r#"SELECT employee.emp_id AS "emp_id", employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" FROM employee WHERE role_code = 2 AND emp_id = ?"#, emp_id)
-//         .fetch_one(&pool)
-//         .await
-//         .expect("Could not retrieve employee name from employee id");
-//     pool.close().await;
-//     match (result.fname, result.mname, result.lname) {
-//         (fname, Some(mname), lname) => format!("{} {} {}", fname, mname, lname),
-//         (fname, None, lname) => format!("{} {}", fname, lname),
-//     }
-// }

@@ -1,43 +1,35 @@
-<!DOCTYPE html>
 <html lang="en">
   <head>
-    <title>Pao Ying Food Inc. Scanned In Employee</title>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="stylesheet" type="text/css" href="/styles/scannedStyles.css" />
     <link rel="stylesheet" type="text/css" href="/styles/sharedStyles.css" />
-    <script src="https://code.jquery.com/jquery-3.1.1.min.js"></script>
-    <script type="text/javascript" src="/scanner.js" defer></script>
+    <link rel="stylesheet" type="text/css" href="/styles/navigationStyles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fingerprint Management</title>
   </head>
   <body>
-    <header>
-      <img class="logo" src="/assets/icons-images/PaoYingLogo.png" alt="Pao Ying Food Inc. Logo"
-      />
-    </header>
-    <div class="content">
-        <div class="form-inline">
-          <h1 id="result-body">Press "Begin Scan" to scan your index finger for attendance.</h1>
-          <div class="popup" id="popup">
-            <img id="employee-image" src=""/>
-            <p id="employee">john doe</p>
-            <p id="employee-id">000</p>
-            <p id="date">date</p>
-            <p id="time">time</p>
-            <p id="code">in or out</p>
-          </div>
-          <button id="identify" class="btn" onclick="start_identify()">Begin Scan</button>
+      <header>
+        <img class="side-logo" src="/assets/icons-images/PaoYingLogo.png" alt="Pao Ying Food Inc. Logo">
+      </header>
+
+        <div class="right-items">
+            <!-- <a class="nav-link item" href="/finger-management.html">
+                    <img class="nav-icon" src="/assets/finger-manage.svg" alt="Fingerprint Management Icon">
+                    <p class="nav-text">Manage Fingerprints</p>
+                    <p class="nav-subtext">view and delete enrolled fingerprints</p>
+            </a>
+            <div class="line"></div> -->
+            <a class="nav-link item" href="/selectEmpToEnroll.html">
+                    <img class="nav-icon" src="/assets/finger-enroll.svg" alt="Fingerprint Enrollment Icon">
+                    <p class="nav-text">Enroll Fingerprint</p>
+                    <p class="nav-subtext">enroll a new fingerprint into the system</p>
+            </a>
+            <div class="line"></div>
+            <a class="nav-link item" href="/attendance.html">
+                    <img class="nav-icon" src="/assets/finger-manage.svg" alt="Attendance Icon">
+                    <p class="nav-text">Record Attendance</p>
+                    <p class="nav-subtext">Record attendance for the day</p>
+            </a>
         </div>
-        <div class="form-inline">
-          <h1>Or...</h1> <!-- style this "or" here to be larger or more consistent-->
-        </div>
-      <h4 class="manual-header">Manually enter your Employee ID # for attendance.</h4>
-      <div class="form-inline" id="form" disabled>
-        <div class="form-group">
-          <label for="emp_id">Input Employee ID: </label>
-          <input type="text" id="emp_id" class="form-control" aria-label="Input employee ID" placeholder="Your Employee ID here..."/>
-        </div>
-        <button id="manual" class="btn" onclick="manual_attendance()">Time-In</button>
-      </div>
     </div>
   </body>
 </html>
