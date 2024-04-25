@@ -330,79 +330,6 @@ pub fn match_cb(
     }
 }
 
-async fn record_attendance(emp_id: &str) -> Result<MySqlRow, String> {
-    //record attendance by emp_id (String type, fingerprint attendance)
-    println!("recording attendance");
-    //setup involving the .env file
-
-    let database_url = match db_url() {
-        Ok(url) => url,
-        Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
-    };
-
-    //connect to the database
-    let pool = match MySqlPool::connect(&database_url).await {
-        Ok(pool) => pool,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    //query the record_attendance stored procedure (non-manual attendance)
-    let row = match sqlx::query!("CALL check_fprint_and_record_attendance(?)", emp_id).fetch_one(&pool).await{
-        Ok(row) => row,
-        Err(e) => {
-            return Err(e.to_string());
-        }
-    };
-
-    pool.close().await; //close connection to database
-
-    // if row.is_err() {
-    //     return Err(row.err().unwrap().to_string());
-    // }
-
-    Ok(row)
-}
-
-async fn obtain_fingerprints_from_db() -> Result<Vec<FpPrint>, String> {
-    let database_url = match db_url() {
-        Ok(url) => url,
-        Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
-    };
-
-    //connect to the database
-    let pool = match MySqlPool::connect(&database_url).await {
-        Ok(pool) => pool,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    let row = sqlx::query!("SELECT fprint FROM enrolled_fingerprints")
-        .fetch_all(&pool)
-        .await;
-
-    pool.close().await; //close connection to database
-
-    if row.is_err() {
-        return Err(row.err().unwrap().to_string());
-    }
-
-    let raw_fprints = row.ok().unwrap();
-    let mut fprint_list = Vec::new(); //ideally should work similar to above
-    for fprint_file in raw_fprints {
-        let deserialized_print = match FpPrint::deserialize(&fprint_file.fprint) {
-            Ok(deserialized_print) => deserialized_print,
-            Err(e) => {
-                return Err(format!(
-                    "Could not deserialize one of the fingerprints: {}",
-                    e
-                )); //modified to early return in case one of the fingerprints cannot be deserialized
-            }
-        };
-        fprint_list.push(deserialized_print);
-    }
-
-    Ok(fprint_list)
-}
-
 fn db_url() -> Result<String, String> {
     // match dotenvy::dotenv() {
     //     Ok(_) => (),
@@ -478,10 +405,82 @@ impl Default for ManagedFprintList {
 }
 
 impl ManagedFprintList {
-    fn populate_list(&mut self){
-        self.0 = Some(Mutex::new(futures::executor::block_on(async {
-            obtain_fingerprints_from_db().await.unwrap()
-        })));
+    // fn populate_list(&mut self){
+    //     self.0 = Some(Mutex::new(futures::executor::block_on(async {
+    //         obtain_fingerprints_from_db().await.unwrap()
+    //     })));
+    // }
+    async fn record_attendance(emp_id: &str) -> Result<MySqlRow, String> {
+        //record attendance by emp_id (String type, fingerprint attendance)
+        println!("recording attendance");
+        //setup involving the .env file
+    
+        let database_url = match db_url() {
+            Ok(url) => url,
+            Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
+        };
+    
+        //connect to the database
+        let pool = match MySqlPool::connect(&database_url).await {
+            Ok(pool) => pool,
+            Err(e) => return Err(e.to_string()),
+        };
+    
+        //query the record_attendance stored procedure (non-manual attendance)
+        let row = match sqlx::query!("CALL check_fprint_and_record_attendance(?)", emp_id).fetch_one(&pool).await{
+            Ok(row) => row,
+            Err(e) => {
+                return Err(e.to_string());
+            }
+        };
+    
+        pool.close().await; //close connection to database
+    
+        // if row.is_err() {
+        //     return Err(row.err().unwrap().to_string());
+        // }
+    
+        Ok(row)
+    }
+    
+    async fn obtain_fingerprints_from_db(&self) -> Result<Vec<FpPrint>, String> {
+        let database_url = match db_url() {
+            Ok(url) => url,
+            Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
+        };
+    
+        //connect to the database
+        let pool = match MySqlPool::connect(&database_url).await {
+            Ok(pool) => pool,
+            Err(e) => return Err(e.to_string()),
+        };
+    
+        let row = sqlx::query!("SELECT fprint FROM enrolled_fingerprints")
+            .fetch_all(&pool)
+            .await;
+    
+        pool.close().await; //close connection to database
+    
+        if row.is_err() {
+            return Err(row.err().unwrap().to_string());
+        }
+    
+        let raw_fprints = row.ok().unwrap();
+        let mut fprint_list = Vec::new(); //ideally should work similar to above
+        for fprint_file in raw_fprints {
+            let deserialized_print = match FpPrint::deserialize(&fprint_file.fprint) {
+                Ok(deserialized_print) => deserialized_print,
+                Err(e) => {
+                    return Err(format!(
+                        "Could not deserialize one of the fingerprints: {}",
+                        e
+                    )); //modified to early return in case one of the fingerprints cannot be deserialized
+                }
+            };
+            fprint_list.push(deserialized_print);
+        }
+    
+        Ok(fprint_list)
     }
 }
 
