@@ -4,12 +4,7 @@
 use serde_json::json;
 use tauri::State;
 
-use std::{
-    env,
-    fs::{self, OpenOptions},
-    io::{BufReader, Read},
-    sync::Mutex,
-};
+use std::{env, sync::Mutex};
 
 use libfprint_rs::{FpContext, FpDevice, FpPrint};
 
@@ -23,10 +18,10 @@ use sqlx::{mysql::MySqlRow, types::time, MySqlPool};
 //     format!("Hello, {}! You've been greeted from Rust!", name)
 // }
 
-#[derive(Clone, serde::Serialize)]
-struct Payload {
-    message: String,
-}
+// #[derive(Clone, serde::Serialize)]
+// struct Payload {
+//     message: String,
+// }
 
 // #[tauri::command]
 // fn test_function(emp: u64) -> String {
@@ -40,21 +35,22 @@ struct Payload {
 
 #[tauri::command]
 fn manual_attendance(emp: String) -> String {
+    //manual attendance where an employee puts their employee ID and takes manual attendance with it
     println!("Entering manual attendance");
     println!("Emp: {}", emp);
 
-    let emp_num = match emp.trim().parse::<u64>() {
-        Ok(num) => num,
-        Err(_) => {
-            return json!({
-                "responsecode" : "failure",
-                "body" : "Invalid employee ID",
-            })
-            .to_string()
-        }
-    };
+    // let emp_num = match emp.trim().parse::<u64>() {
+    //     Ok(num) => num,
+    //     Err(_) => {
+    //         return json!({
+    //             "responsecode" : "failure",
+    //             "body" : "Invalid employee ID",
+    //         })
+    //         .to_string()
+    //     }
+    // };
 
-    let row = futures::executor::block_on(async { query_record_attendance(&emp_num).await });
+    let row = futures::executor::block_on(async { record_attendance(&emp).await }); //query_record_attendance(&emp_num).await
 
     let output = if row.is_ok() {
         let row = row.unwrap();
@@ -124,6 +120,7 @@ fn manual_attendance(emp: String) -> String {
         };
         println!("Attendance Status: {}", row_attendance_status);
 
+        //return the json containing the employee and the attendance details
         json!({
            "responsecode" : "success",
            "body" : [
@@ -167,7 +164,10 @@ fn manual_attendance(emp: String) -> String {
 */
 
 #[tauri::command]
-fn start_identify(device: State<ManagedFpDevice>, fingerprints: State<ManagedFprintList>) -> String {
+fn start_identify(
+    device: State<ManagedFpDevice>,
+    fingerprints: State<ManagedFprintList>,
+) -> String {
     println!("entering verify mode!");
 
     if device.0.is_none() {
@@ -279,9 +279,11 @@ fn start_identify(device: State<ManagedFpDevice>, fingerprints: State<ManagedFpr
         }
     };
 
-    let mut new_print = FpPrint::new(&fp_scanner);
+    let mut new_print = FpPrint::new(&fp_scanner); //create a new fingerprint
     println!("Please scan your fingerprint");
+
     let fprint_list = match fingerprints.0.as_ref().unwrap().lock() {
+        //get the list of fingerprints
         Ok(fprint_list) => fprint_list,
         Err(e) => {
             return json!({
@@ -291,6 +293,8 @@ fn start_identify(device: State<ManagedFpDevice>, fingerprints: State<ManagedFpr
             .to_string();
         }
     };
+
+    //identify the scanned fingerprint with identify_sync, it returns nothing if the fingerprint is not in the database, and returns a fingerprint when matched
     let print_identified = match fp_scanner.identify_sync(
         &fprint_list,
         None,
@@ -312,6 +316,7 @@ fn start_identify(device: State<ManagedFpDevice>, fingerprints: State<ManagedFpr
     //.expect("Fingerprint could not be identified due to an error");
 
     match fp_scanner.close_sync(None) {
+        //close fingerprint scanner
         Ok(()) => (),
         Err(e) => {
             return json!({
@@ -321,7 +326,8 @@ fn start_identify(device: State<ManagedFpDevice>, fingerprints: State<ManagedFpr
         }
     }
 
-    if print_identified.is_some() { //put another check sa db side if the preloaded fprint is in the db
+    if print_identified.is_some() {
+        //put another check sa db side if the preloaded fprint is in the db
         let fprint = print_identified.expect("Print should be able to be unwrapped here");
         let emp_id = fprint.username();
         match emp_id {
@@ -331,7 +337,7 @@ fn start_identify(device: State<ManagedFpDevice>, fingerprints: State<ManagedFpr
                     println!("Before recording attendance");
                     let result = record_attendance(&emp_id).await;
                     if result.is_ok() {
-                        let row = result.unwrap();
+                        let row = result.expect("MySqlRow should be able to be unwrapped here");
                         let row_emp_id = row.get::<u64, usize>(0);
                         let row_fname = row.get::<String, usize>(1);
                         let row_lname = row.get::<String, usize>(2);
@@ -344,7 +350,7 @@ fn start_identify(device: State<ManagedFpDevice>, fingerprints: State<ManagedFpr
 
                         println!("{}", msg);
 
-                        json!({
+                        json!({ //return the json containing the employee and the attendance details
                             "responsecode": "success",
                             "body": [
                                 row_emp_id,
@@ -384,14 +390,17 @@ fn start_identify(device: State<ManagedFpDevice>, fingerprints: State<ManagedFpr
         .to_string()
     }
 }
-/*
+
+/* Below are the sample json responses that can be returned (success and failure respectively):
 {
     "responsecode": "success",
     "body": [
         "emp_id",
         "fname",
         "lname",
-        "time"
+        "time",
+        "date",
+        "attendance_status"
     ]
 }
 */
@@ -403,61 +412,62 @@ fn start_identify(device: State<ManagedFpDevice>, fingerprints: State<ManagedFpr
 }
 */
 
-async fn query_record_attendance(emp_id: &u64) -> Result<MySqlRow, String> {
-    let database_url = match db_url() {
-        Ok(url) => url,
-        Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
-    };
+// async fn query_record_attendance(emp_id: &u64) -> Result<MySqlRow, String> {
+//     //record attendance by emp_id (u64 type, manual attendance)
+//     let database_url = match db_url() {
+//         Ok(url) => url,
+//         Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
+//     };
 
-    //connect to the database
-    let pool = match MySqlPool::connect(&database_url).await {
-        Ok(pool) => pool,
-        Err(e) => return Err(e.to_string()),
-    };
+//     //connect to the database
+//     let pool = match MySqlPool::connect(&database_url).await {
+//         Ok(pool) => pool,
+//         Err(e) => return Err(e.to_string()),
+//     };
 
-    //query the record_attendance_by_empid stored procedure (manual attendance)
-    let result = match sqlx::query!("CALL record_attendance_by_empid(?)", emp_id)
-        //.execute(&pool)
-        .fetch_one(&pool)
-        .await
-    {
-        Ok(result) => {
-            println!("Attendance recorded successfully");
-            result
-        }
-        Err(e) => match e {
-            sqlx::Error::Database(e) => {
-                return Err(e.message().to_string());
-            }
-            _ => {
-                return Err(e.to_string());
-            }
-        },
-    };
+//     //query the record_attendance_by_empid stored procedure (manual attendance)
+//     let result = match sqlx::query!("CALL record_attendance_by_empid(?)", emp_id)
+//         //.execute(&pool)
+//         .fetch_one(&pool)
+//         .await
+//     {
+//         Ok(result) => {
+//             println!("Attendance recorded successfully");
+//             result
+//         }
+//         Err(e) => match e {
+//             sqlx::Error::Database(e) => {
+//                 return Err(e.message().to_string());
+//             }
+//             _ => {
+//                 return Err(e.to_string());
+//             }
+//         },
+//     };
 
-    // let uuid_query = match sqlx::query!("SELECT fprint_uuid from enrolled_fingerprints where emp_id = ?", emp_id)
-    //     .fetch_one(&pool)
-    //     .await {
-    //         Ok(uuid) => uuid,
-    //         Err(e) => return Err(e.to_string()),
-    //     };
-    //     //.expect("Could not retrieve uuid");
+// let uuid_query = match sqlx::query!("SELECT fprint_uuid from enrolled_fingerprints where emp_id = ?", emp_id)
+//     .fetch_one(&pool)
+//     .await {
+//         Ok(uuid) => uuid,
+//         Err(e) => return Err(e.to_string()),
+//     };
+//     //.expect("Could not retrieve uuid");
 
-    // let uuid = uuid_query.fprint_uuid;   //.get::<String, usize>(0);
+// let uuid = uuid_query.fprint_uuid;   //.get::<String, usize>(0);
 
-    // println!("UUID: {}", uuid);
+// println!("UUID: {}", uuid);
 
-    // let row = match sqlx::query!("CALL get_latest_attendance_record(?)", uuid)
-    //     .fetch_one(&pool)
-    //     .await {
-    //         Ok(row) => row,
-    //         Err(e) => return Err(e.to_string()),
-    //     };
-    //.expect("Could not retrieve latest attendance record");
+// let row = match sqlx::query!("CALL get_latest_attendance_record(?)", uuid)
+//     .fetch_one(&pool)
+//     .await {
+//         Ok(row) => row,
+//         Err(e) => return Err(e.to_string()),
+//     };
+//.expect("Could not retrieve latest attendance record");
 
-    pool.close().await; //close connection to database
-    Ok(result) //return from the function with no errors
-}
+//     pool.close().await; //close connection to database
+//     Ok(result) //return from the function with no errors
+// }
 
 // async fn employee_name_from_uuid(uuid: &str) -> String {
 //     dotenvy::dotenv().unwrap();
@@ -494,7 +504,7 @@ async fn query_record_attendance(emp_id: &u64) -> Result<MySqlRow, String> {
 //     }
 // }
 
-//function below is a callback function that is called when a scanned fingerprint is matched with previously enrolled fingerprints
+//function below is a callback function that is called when a scanned fingerprint is to be matched with previously enrolled fingerprints
 pub fn match_cb(
     _device: &FpDevice,
     matched_print: Option<FpPrint>,
@@ -520,6 +530,7 @@ pub fn match_cb(
 }
 
 async fn record_attendance(emp_id: &str) -> Result<MySqlRow, String> {
+    //record attendance by emp_id (String type, fingerprint attendance)
     println!("recording attendance");
     //setup involving the .env file
 
@@ -559,9 +570,6 @@ async fn record_attendance(emp_id: &str) -> Result<MySqlRow, String> {
 }
 
 async fn obtain_fingerprints_from_db() -> Result<Vec<FpPrint>, String> {
-    println!("recording attendance");
-    //setup involving the .env file
-
     let database_url = match db_url() {
         Ok(url) => url,
         Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
@@ -578,16 +586,40 @@ async fn obtain_fingerprints_from_db() -> Result<Vec<FpPrint>, String> {
         .await;
 
     pool.close().await; //close connection to database
+
     if row.is_err() {
         return Err(row.err().unwrap().to_string());
     }
-    
+
     let raw_fprints = row.ok().unwrap();
 
-    let fprint_list = raw_fprints.iter().map(|fprint_file|{
-        let deserialized_print = FpPrint::deserialize(&fprint_file.fprint);
-        deserialized_print.unwrap()
-    }).collect::<Vec<FpPrint>>();
+    // let fprint_list = raw_fprints
+    //     .iter()
+    //     .map(|fprint_file| {
+    //         let deserialized_print = match FpPrint::deserialize(&fprint_file.fprint) {
+    //             Ok(deserialized_print) => deserialized_print,
+    //             Err(e) => {
+    //                 return Err(format!("Could not deserialize one of the fingerprints: {}", e));
+    //             }
+    //         };
+    //         deserialized_print
+    //     })
+    //     .collect::<Vec<FpPrint>>();
+
+    let mut fprint_list = Vec::new(); //ideally should work similar to above
+    for fprint_file in raw_fprints {
+        let deserialized_print = match FpPrint::deserialize(&fprint_file.fprint) {
+            Ok(deserialized_print) => deserialized_print,
+            Err(e) => {
+                return Err(format!(
+                    "Could not deserialize one of the fingerprints: {}",
+                    e
+                )); //modified to early return in case one of the fingerprints cannot be deserialized
+            }
+        };
+        fprint_list.push(deserialized_print);
+    }
+
     Ok(fprint_list)
 }
 
@@ -639,22 +671,6 @@ fn db_url() -> Result<String, String> {
     Ok(database_url)
 }
 
-// struct AttRecord {
-//     @emp_id: u64, //bigint
-//     fname: String, //varchar
-//     lname: String, //varchar
-//     curr_date: time::Date, //date
-//     curr_time: time::Time, //time
-//     incoming_status_code: u16, //smallint unsigned
-// }
-
-// struct Wrapper {
-//     context: Arc<Mutex<FpContext>>,
-// }
-
-// unsafe impl Send for Wrapper {}
-// unsafe impl Sync for Wrapper {}
-
 struct ManagedFpDevice(Option<Mutex<FpDevice>>);
 struct ManagedFprintList(Option<Mutex<Vec<FpPrint>>>);
 
@@ -670,20 +686,11 @@ impl Default for ManagedFpDevice {
 
 impl Default for ManagedFprintList {
     fn default() -> Self {
-        Self(Some(Mutex::new(
-            futures::executor::block_on(async {
-                obtain_fingerprints_from_db().await.unwrap()
-             })
-            
-        )))
+        Self(Some(Mutex::new(futures::executor::block_on(async {
+            obtain_fingerprints_from_db().await.unwrap()
+        }))))
     }
 }
-
-// impl Default for Note {
-//     fn default() -> Self {
-//         Self(Mutex::new(FpContext::new().devices().remove(0)))
-//     }
-// }
 
 #[tokio::main]
 async fn main() {
@@ -691,10 +698,7 @@ async fn main() {
         .setup(|_app| Ok(()))
         .manage(ManagedFpDevice::default())
         .manage(ManagedFprintList::default())
-        .invoke_handler(tauri::generate_handler![
-            start_identify,
-            manual_attendance
-        ])
+        .invoke_handler(tauri::generate_handler![start_identify, manual_attendance])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
