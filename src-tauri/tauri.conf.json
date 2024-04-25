@@ -6,7 +6,7 @@
   },
   "package": {
     "productName": "butterfingers-tauri",
-    "version": "0.0.0"
+    "version": "1.0.1"
   },
   "tauri": {
     "allowlist": {
@@ -18,7 +18,7 @@
     },
     "windows": [
       {
-        "title": "butterfingers-tauri",
+        "title": "Attendance Recorder",
         "width": 800,
         "height": 600,
         "maximized": true
@@ -29,15 +29,24 @@
     },
     "bundle": {
       "active": true,
-      "targets": "appimage",
-      "identifier": "com.butterfingers",
+      "targets": "deb",
+      "identifier": "com.butterfingers.recorder",
       "icon": [
         "icons/32x32.png",
         "icons/128x128.png",
         "icons/128x128@2x.png",
         "icons/icon.icns",
         "icons/icon.ico"
-      ]
+      ],
+      "deb": {
+        "depends": [
+          "libfprint-2-2",
+          "libcairo-gobject2"
+        ],
+        "desktopTemplate": "./main.desktop"
+      }
+      
+    
     }
   }
 }
