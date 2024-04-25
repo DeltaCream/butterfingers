@@ -13,6 +13,14 @@ use sqlx::Row;
 use sqlx::{mysql::MySqlRow, types::time, MySqlPool};
 
 #[tauri::command]
+fn load_fingerprints(fingerprints: State<ManagedFprintList>) -> String {
+    match futures::executor::block_on(async { fingerprints.obtain_fingerprints_from_db().await }) {
+        Ok(_) => "success".to_string(),
+        Err(e) => e.to_string(),
+    }
+}
+
+#[tauri::command]
 fn manual_attendance(emp: String) -> String {
     //manual attendance where an employee puts their employee ID and takes manual attendance with it
     println!("Entering manual attendance");
@@ -445,7 +453,7 @@ impl ManagedFprintList {
     //         obtain_fingerprints_from_db().await.unwrap()
     //     })));
     // }
-    async fn obtain_fingerprints_from_db(&self) -> Result<Vec<FpPrint>, String> {
+    async fn obtain_fingerprints_from_db(&mut self) -> Result<(), String> {
         let database_url = match db_url() {
             Ok(url) => url,
             Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
@@ -468,21 +476,58 @@ impl ManagedFprintList {
         }
     
         let raw_fprints = row.ok().unwrap();
-        let mut fprint_list = Vec::new(); //ideally should work similar to above
-        for fprint_file in raw_fprints {
-            let deserialized_print = match FpPrint::deserialize(&fprint_file.fprint) {
-                Ok(deserialized_print) => deserialized_print,
-                Err(e) => {
-                    return Err(format!(
-                        "Could not deserialize one of the fingerprints: {}",
-                        e
-                    )); //modified to early return in case one of the fingerprints cannot be deserialized
-                }
-            };
-            fprint_list.push(deserialized_print);
+
+        if self.0.is_none() {
+            self.0 = Some(Mutex::new(Vec::new()));
+            let mut managed_fprint_list = self.0.as_ref().unwrap().lock().unwrap();
+            let mut fprint_list = Vec::new();
+            for fprint_file in raw_fprints {
+                let deserialized_print = match FpPrint::deserialize(&fprint_file.fprint) {
+                    Ok(deserialized_print) => deserialized_print,
+                    Err(e) => {
+                        return Err(format!(
+                            "Could not deserialize one of the fingerprints: {}",
+                            e
+                        ));
+                    }
+                };
+                fprint_list.push(deserialized_print);
+            }
+            *managed_fprint_list = fprint_list;
+        } else {
+            let mut managed_fprint_list = self.0.as_ref().unwrap().lock().unwrap();
+            let mut fprint_list = Vec::new();
+            for fprint_file in raw_fprints {
+                let deserialized_print = match FpPrint::deserialize(&fprint_file.fprint) {
+                    Ok(deserialized_print) => deserialized_print,
+                    Err(e) => {
+                        return Err(format!(
+                            "Could not deserialize one of the fingerprints: {}",
+                            e
+                        ));
+                    }
+                };
+                fprint_list.push(deserialized_print);
+            }
+            *managed_fprint_list = fprint_list;
         }
+
+        //let mut fprint_list = Vec::new(); //ideally should work similar to above
+        // for fprint_file in raw_fprints {
+        //     let deserialized_print = match FpPrint::deserialize(&fprint_file.fprint) {
+        //         Ok(deserialized_print) => deserialized_print,
+        //         Err(e) => {
+        //             return Err(format!(
+        //                 "Could not deserialize one of the fingerprints: {}",
+        //                 e
+        //             )); //modified to early return in case one of the fingerprints cannot be deserialized
+        //         }
+        //     };
+        //     fprint_list.push(deserialized_print);
+        // }
     
-        Ok(fprint_list)
+        // self.0 = Some(Mutex::new(fprint_list));
+        Ok(())
     }
 }
 
