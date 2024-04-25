@@ -17,7 +17,7 @@ fn load_fingerprints(fingerprints: State<ManagedFprintList>) -> String {
         fingerprints.obtain_fingerprints_from_db().await
     }) {
         Ok(o) => json!({
-            "responsecode" : "failure",
+            "responsecode" : "success",
             "body" : o,
         }).to_string(),
         Err(e) => json!({
