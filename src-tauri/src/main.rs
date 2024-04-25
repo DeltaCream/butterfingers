@@ -3,7 +3,6 @@
 
 use serde_json::json;
 use tauri::State;
-
 use std::{env, sync::Mutex};
 
 use libfprint_rs::{FpContext, FpDevice, FpPrint};
@@ -14,10 +13,19 @@ use sqlx::{mysql::MySqlRow, types::time, MySqlPool};
 
 #[tauri::command]
 fn load_fingerprints(fingerprints: State<ManagedFprintList>) -> String {
-    match futures::executor::block_on(async { fingerprints.obtain_fingerprints_from_db().await }) {
-        Ok(_) => "success".to_string(),
-        Err(e) => e.to_string(),
-    }
+    let result = match futures::executor::block_on(async { 
+        fingerprints.obtain_fingerprints_from_db().await
+    }) {
+        Ok(o) => json!({
+            "responsecode" : "failure",
+            "body" : o,
+        }).to_string(),
+        Err(e) => json!({
+            "responsecode" : "failure",
+            "body" : e,
+        }).to_string(),
+    };
+    return result;
 }
 
 #[tauri::command]
@@ -443,17 +451,12 @@ impl Default for ManagedFpDevice {
 
 impl Default for ManagedFprintList {
     fn default() -> Self {
-        Self(None)
+        Self(Some(Mutex::new(Vec::new())))
     }
 }
 
 impl ManagedFprintList {
-    // fn populate_list(&mut self){
-    //     self.0 = Some(Mutex::new(futures::executor::block_on(async {
-    //         obtain_fingerprints_from_db().await.unwrap()
-    //     })));
-    // }
-    async fn obtain_fingerprints_from_db(&mut self) -> Result<(), String> {
+    async fn obtain_fingerprints_from_db(&self) -> Result<String, String> {
         let database_url = match db_url() {
             Ok(url) => url,
             Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
@@ -476,11 +479,10 @@ impl ManagedFprintList {
         }
     
         let raw_fprints = row.ok().unwrap();
-
-        if self.0.is_none() {
-            self.0 = Some(Mutex::new(Vec::new()));
-            let mut managed_fprint_list = self.0.as_ref().unwrap().lock().unwrap();
-            let mut fprint_list = Vec::new();
+        let mut managed_fprint_list = self.0.as_ref().unwrap().lock().unwrap();
+        
+        if managed_fprint_list.is_empty() {
+            println!("size of fprint list: {}", managed_fprint_list.len());
             for fprint_file in raw_fprints {
                 let deserialized_print = match FpPrint::deserialize(&fprint_file.fprint) {
                     Ok(deserialized_print) => deserialized_print,
@@ -491,12 +493,14 @@ impl ManagedFprintList {
                         ));
                     }
                 };
-                fprint_list.push(deserialized_print);
+                managed_fprint_list.push(deserialized_print);
             }
-            *managed_fprint_list = fprint_list;
         } else {
-            let mut managed_fprint_list = self.0.as_ref().unwrap().lock().unwrap();
-            let mut fprint_list = Vec::new();
+            println!("size of fprint list before de-allocation: {}", managed_fprint_list.len());
+            managed_fprint_list.clear();
+            println!("size of fprint list after de-allocation: {}", managed_fprint_list.len());
+            assert!(managed_fprint_list.is_empty(), "vector is not empty!");
+            //let mut fprint_list = Vec::new();
             for fprint_file in raw_fprints {
                 let deserialized_print = match FpPrint::deserialize(&fprint_file.fprint) {
                     Ok(deserialized_print) => deserialized_print,
@@ -507,9 +511,9 @@ impl ManagedFprintList {
                         ));
                     }
                 };
-                fprint_list.push(deserialized_print);
+                managed_fprint_list.push(deserialized_print);
             }
-            *managed_fprint_list = fprint_list;
+            //*managed_fprint_list = fprint_list;
         }
 
         //let mut fprint_list = Vec::new(); //ideally should work similar to above
@@ -527,7 +531,7 @@ impl ManagedFprintList {
         // }
     
         // self.0 = Some(Mutex::new(fprint_list));
-        Ok(())
+        Ok(String::from("Fingerprints Successfully loaded!"))
     }
 }
 
@@ -538,7 +542,7 @@ async fn main() {
         .setup(|_app| Ok(()))
         .manage(ManagedFpDevice::default())
         .manage(ManagedFprintList::default())
-        .invoke_handler(tauri::generate_handler![start_identify, manual_attendance])
+        .invoke_handler(tauri::generate_handler![start_identify, manual_attendance, load_fingerprints])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -17,8 +17,16 @@ let resultString = document.querySelector("#result-body");
 let btnIdentify = document.querySelector("#identify");
 let btnManual = document.querySelector("#manual");
 const revert = 2000; // time until text revert in ms
-const imageURL = "http://localhost/attendance/images/"; // change ip address
+const imageURL = "http://192.168.100.23/attendance/images/"; // change ip address
 
+window.addEventListener("DOMContentLoaded", () => {
+  let result = load_fingerprints();
+  console.log(result);
+});
+
+async function load_fingerprints(){
+  return await invoke('load_fingerprints');
+}
 // identify fingerprint
 async function start_identify() {
   try {
