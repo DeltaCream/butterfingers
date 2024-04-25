@@ -473,9 +473,15 @@ impl Default for ManagedFpDevice {
 
 impl Default for ManagedFprintList {
     fn default() -> Self {
-        Self(Some(Mutex::new(futures::executor::block_on(async {
+        Self(None)
+    }
+}
+
+impl ManagedFprintList {
+    fn populate_list(&mut self){
+        self.0 = Some(Mutex::new(futures::executor::block_on(async {
             obtain_fingerprints_from_db().await.unwrap()
-        }))))
+        })));
     }
 }
 
