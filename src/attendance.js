@@ -16,6 +16,7 @@ body: {
 let resultString = document.querySelector("#result-body");
 let btnIdentify = document.querySelector("#identify");
 let btnManual = document.querySelector("#manual");
+let isOnIdentify = false;
 const revert = 2000; // time until text revert in ms
 const imageURL = "http://192.168.100.23/attendance/images/"; // change ip address
 
@@ -33,45 +34,57 @@ async function cancel_identify(){
 }
 // identify fingerprint
 async function start_identify() {
-  try {
-    const response = await invoke("start_identify");
-    const result = JSON.parse(response);
-
-    // check if response has error key
-    if (result && result.responsecode === "success") {
-      const data = result.body;
-      resultString.innerHTML = "<span class=\"success\">Attendance Recorded!</span>";
-
-      // change data
-      document.querySelector("#employee-image").src = imageURL + data[0];
-      document.querySelector("#employee").innerHTML = "<span class=\"success\">" + data[1] + " " + data[2] + "</span>";
-      document.querySelector("#employee-id").textContent = data[0];
-      document.querySelector("#date").textContent = data[4];
-      document.querySelector("#time").textContent = data[3];
-      if (data[5] === 1) {
-        document.querySelector("#code").textContent = "Time-In";
+  if(isOnIdentify == false){
+    try {
+      isOnIdentify = true;
+      btnManual.disabled = true;
+      btnIdentify.textContent = "Cancel Scan";
+      const response = await invoke("start_identify");
+      const result = JSON.parse(response);
+  
+      // check if response has error key
+      if (result && result.responsecode === "success") {
+        const data = result.body;
+        resultString.innerHTML = "<span class=\"success\">Attendance Recorded!</span>";
+  
+        // change data
+        document.querySelector("#employee-image").src = imageURL + data[0];
+        document.querySelector("#employee").innerHTML = "<span class=\"success\">" + data[1] + " " + data[2] + "</span>";
+        document.querySelector("#employee-id").textContent = data[0];
+        document.querySelector("#date").textContent = data[4];
+        document.querySelector("#time").textContent = data[3];
+        if (data[5] === 1) {
+          document.querySelector("#code").textContent = "Time-In";
+        } else {
+          document.querySelector("#code").textContent = "Time-Out";
+        }
+  
+        // popup employee window
+        showPopup();
+  
+        console.log("Response: " + JSON.stringify(data));
+  
+        revertText();
       } else {
-        document.querySelector("#code").textContent = "Time-Out";
+        resultString.innerHTML = "<span class=\"error\">" + result.body + "</span>";
+        console.error("Error in response: " + result.body);
+  
+        revertText();
       }
-
-      // popup employee window
-      showPopup();
-
-      console.log("Response: " + JSON.stringify(data));
-
-      revertText();
-    } else {
+  
+      document.querySelector("#emp_id").value = "";
+    } catch (err) {
       resultString.innerHTML = "<span class=\"error\">" + result.body + "</span>";
-      console.error("Error in response: " + result.body);
-
+      console.error("Error invoking start_identify: " + result.body);
       revertText();
+    }finally {
+      isOnIdentify = false;
+      btnIdentify.textContent = "Begin Scan";
     }
-
-    document.querySelector("#emp_id").value = "";
-  } catch (err) {
-    resultString.innerHTML = "<span class=\"error\">" + result.body + "</span>";
-    console.error("Error invoking start_identify: " + result.body);
-
+  }else {
+    cancel_identify();
+    isOnIdentify = false;
+    btnIdentify.textContent = "Begin Scan";
     revertText();
   }
 }
