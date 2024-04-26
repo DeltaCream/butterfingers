@@ -702,7 +702,7 @@ fn start_identify(
                 if cancellable.is_cancelled() {
                     return json!({
                         "responsecode": "failure",
-                        "body": format!("Attendance Cancelled"),
+                        "body": format!("Fingerprint Scan cancelled"),
                     })
                     .to_string();
                 } else {
