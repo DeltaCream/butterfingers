@@ -27,6 +27,10 @@ window.addEventListener("DOMContentLoaded", () => {
 async function load_fingerprints(){
   return await invoke('load_fingerprints');
 }
+
+async function cancel_identify(){
+  await invoke('cancel_identify');
+}
 // identify fingerprint
 async function start_identify() {
   try {

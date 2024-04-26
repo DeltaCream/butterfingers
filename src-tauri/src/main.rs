@@ -1,12 +1,13 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-use std::sync::Arc;
-use sqlx::Row;
+use libfprint_rs::{Cancellable, CancellableExt, FpContext, FpDevice, FpPrint};
 use serde_json::json;
-use tauri::State;
-use std::{env, sync::Mutex};
-use libfprint_rs::{FpContext, FpDevice, FpPrint};
+use sqlx::Row;
 use sqlx::{mysql::MySqlRow, types::time, MySqlPool};
+use std::sync::Arc;
+use std::{env, sync::Mutex};
+use tauri::State;
+use tokio::sync::RwLock;
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 
@@ -79,7 +80,8 @@ async fn enumerate_unenrolled_employees() -> String {
 }
 
 #[tauri::command]
-fn enroll_proc(emp: String, device: State<ManagedFpDevice>) -> String { //function that is called when scanning a fingerprint for enrollment
+fn enroll_proc(emp: String, device: State<ManagedFpDevice>) -> String {
+    //function that is called when scanning a fingerprint for enrollment
     let emp_num = match emp.trim().parse::<u64>() {
         Ok(num) => num,
         Err(_) => {
@@ -92,8 +94,8 @@ fn enroll_proc(emp: String, device: State<ManagedFpDevice>) -> String { //functi
     };
 
     /*
-    * Get emp_id and check if it already is enrolled.
-    */
+     * Get emp_id and check if it already is enrolled.
+     */
 
     // let result = match futures::executor::block_on(async {
     //   query_count(emp_num).await
@@ -239,7 +241,8 @@ fn enroll_proc(emp: String, device: State<ManagedFpDevice>) -> String { //functi
 //   Ok(())
 // }
 
-async fn save_fprint_to_db(emp_id: &u64, fprint: Vec<u8>) -> Result<(), String> { //save a fingerprint in the database to be associated with an employee id
+async fn save_fprint_to_db(emp_id: &u64, fprint: Vec<u8>) -> Result<(), String> {
+    //save a fingerprint in the database to be associated with an employee id
     let database_url = match db_url() {
         Ok(url) => url,
         Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
@@ -317,7 +320,7 @@ fn db_url() -> Result<String, String> {
     //     Err(_) => return Err("DB_NAME not set".to_string()),
     // };
 
-    let db_params = dotenvy_macro::dotenv!("DB_PARAMS"); 
+    let db_params = dotenvy_macro::dotenv!("DB_PARAMS");
     // {
     //     Ok(params) => params,
     //     Err(_) => return Err("DB_PARAMS not set".to_string()),
@@ -329,7 +332,6 @@ fn db_url() -> Result<String, String> {
     );
     Ok(database_url)
 }
-
 
 pub fn enroll_cb(
     _device: &FpDevice,
@@ -348,6 +350,7 @@ fn get_device_enroll_stages(device: State<ManagedFpDevice>) -> i32 {
 }
 
 struct ManagedFpDevice(Option<Mutex<FpDevice>>);
+struct ManagedCancellable(Option<RwLock<Cancellable>>);
 struct ManagedFprintList(Option<Mutex<Vec<FpPrint>>>);
 
 impl Default for ManagedFpDevice {
@@ -366,32 +369,51 @@ impl Default for ManagedFprintList {
     }
 }
 
+impl Default for ManagedCancellable {
+    fn default() -> Self {
+        Self(Some(RwLock::new(Cancellable::new())))
+    }
+}
+
+impl ManagedCancellable {
+    fn cancel_managed(&self) {
+        if self.0.is_some() {
+            {
+                let cancellable =
+                    futures::executor::block_on(async { self.0.as_ref().unwrap().read().await });
+                cancellable.cancel();
+                assert!(cancellable.is_cancelled(), "we did not cancel!");
+            }
+        }
+    }
+}
+
 impl ManagedFprintList {
     async fn obtain_fingerprints_from_db(&self) -> Result<String, String> {
         let database_url = match db_url() {
             Ok(url) => url,
             Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
         };
-    
+
         //connect to the database
         let pool = match MySqlPool::connect(&database_url).await {
             Ok(pool) => pool,
             Err(e) => return Err(e.to_string()),
         };
-    
+
         let row = sqlx::query!("SELECT fprint FROM enrolled_fingerprints")
             .fetch_all(&pool)
             .await;
-    
+
         pool.close().await; //close connection to database
-    
+
         if row.is_err() {
             return Err(row.err().unwrap().to_string());
         }
-    
+
         let raw_fprints = row.ok().unwrap();
         let mut managed_fprint_list = self.0.as_ref().unwrap().lock().unwrap();
-        
+
         if managed_fprint_list.is_empty() {
             println!("size of fprint list: {}", managed_fprint_list.len());
             for fprint_file in raw_fprints {
@@ -407,9 +429,15 @@ impl ManagedFprintList {
                 managed_fprint_list.push(deserialized_print);
             }
         } else {
-            println!("size of fprint list before de-allocation: {}", managed_fprint_list.len());
+            println!(
+                "size of fprint list before de-allocation: {}",
+                managed_fprint_list.len()
+            );
             managed_fprint_list.clear();
-            println!("size of fprint list after de-allocation: {}", managed_fprint_list.len());
+            println!(
+                "size of fprint list after de-allocation: {}",
+                managed_fprint_list.len()
+            );
             assert!(managed_fprint_list.is_empty(), "vector is not empty!");
             //let mut fprint_list = Vec::new();
             for fprint_file in raw_fprints {
@@ -440,7 +468,7 @@ impl ManagedFprintList {
         //     };
         //     fprint_list.push(deserialized_print);
         // }
-    
+
         // self.0 = Some(Mutex::new(fprint_list));
         Ok(String::from("Fingerprints Successfully loaded!"))
     }
@@ -453,11 +481,15 @@ async fn main() {
         .setup(|_app| Ok(()))
         .manage(ManagedFpDevice::default())
         .manage(ManagedFprintList::default())
+        .manage(ManagedCancellable::default())
         .invoke_handler(tauri::generate_handler![
             enumerate_unenrolled_employees,
             enroll_proc,
             get_device_enroll_stages,
-            start_identify, manual_attendance, load_fingerprints
+            start_identify,
+            manual_attendance,
+            load_fingerprints,
+            cancel_identify
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -465,17 +497,19 @@ async fn main() {
 //attendance related functions
 #[tauri::command]
 fn load_fingerprints(fingerprints: State<ManagedFprintList>) -> String {
-    let result = match futures::executor::block_on(async { 
+    let result = match futures::executor::block_on(async {
         fingerprints.obtain_fingerprints_from_db().await
     }) {
         Ok(o) => json!({
             "responsecode" : "success",
             "body" : o,
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => json!({
             "responsecode" : "failure",
             "body" : e,
-        }).to_string(),
+        })
+        .to_string(),
     };
     return result;
 }
@@ -577,11 +611,16 @@ fn manual_attendance(emp: String) -> String {
 
     output.to_string()
 }
+#[tauri::command]
+fn cancel_identify(managed_cancellable: State<ManagedCancellable>) {
+    managed_cancellable.cancel_managed();
+}
 
 #[tauri::command]
 fn start_identify(
     device: State<ManagedFpDevice>,
     fingerprints: State<ManagedFprintList>,
+    managed_cancellable: State<ManagedCancellable>,
 ) -> String {
     println!("entering verify mode!");
 
@@ -593,8 +632,16 @@ fn start_identify(
     }
 
     //print that the fingerprints are retrieved (for debugging purposes, commented out on production)
-    println!("Fingerprints retrieved");
+    //println!("Fingerprints retrieved");
 
+    {
+        let mut cancellable = futures::executor::block_on(async {
+            managed_cancellable.0.as_ref().unwrap().write().await
+        });
+        if cancellable.is_cancelled() {
+            *cancellable = Cancellable::new();
+        }
+    }
     //
     let fp_scanner = match device.0.as_ref().unwrap().lock() {
         Ok(fp_scanner) => fp_scanner,
@@ -634,26 +681,39 @@ fn start_identify(
             .to_string();
         }
     };
-
-    //identify the scanned fingerprint with identify_sync, it returns nothing if the fingerprint is not in the database, and returns a fingerprint when matched
-    let print_identified = match fp_scanner.identify_sync(
-        &fprint_list,
-        None,
-        Some(match_cb),
-        None,
-        Some(&mut new_print),
-    ) {
-        Ok(print) => print,
-        Err(e) => {
-            fp_scanner
-                .close_sync(None)
-                .expect("Could not close the fingerprint scanner");
-            return json!({
+    let mut print_identified: Option<FpPrint> = None;
+    {
+        let cancellable = futures::executor::block_on(async {
+            managed_cancellable.0.as_ref().unwrap().read().await
+        });
+        //identify the scanned fingerprint with identify_sync, it returns nothing if the fingerprint is not in the database, and returns a fingerprint when matched
+        print_identified = match fp_scanner.identify_sync(
+            &fprint_list,
+            Some(&cancellable),
+            Some(match_cb),
+            None,
+            Some(&mut new_print),
+        ) {
+            Ok(print) => print,
+            Err(e) => {
+                fp_scanner
+                    .close_sync(None)
+                    .expect("Could not close the fingerprint scanner");
+                if cancellable.is_cancelled() {
+                    return json!({
+                        "responsecode": "failure",
+                        "body": format!("Attendance Cancelled"),
+                    })
+                    .to_string();
+                } else {
+                    return json!({
                     "responsecode": "failure",
                     "body": format!("Could not identify fingerprint due to an error: {}", e.to_string()),
                 }).to_string();
-        }
-    };
+                }
+            }
+        };
+    }
 
     match fp_scanner.close_sync(None) {
         //close fingerprint scanner
@@ -716,9 +776,9 @@ fn start_identify(
             None => {
                 println!("No employee associated with the scanned fingerprint."); //uuid did not contain a string (essentially None acts as a null value)
                 json!({
-                    "responsecode": "failure",
-                    "body": "No employee associated with the scanned fingerprint. Please try scanning again, or enroll first.",
-                }).to_string()
+                        "responsecode": "failure",
+                        "body": "No employee associated with the scanned fingerprint. Please try scanning again, or enroll first.",
+                    }).to_string()
             }
         }
     } else {
@@ -773,7 +833,10 @@ async fn record_attendance(emp_id: &str) -> Result<MySqlRow, String> {
     };
 
     //query the record_attendance stored procedure (non-manual attendance)
-    let row = match sqlx::query!("CALL check_fprint_and_record_attendance(?)", emp_id).fetch_one(&pool).await{
+    let row = match sqlx::query!("CALL check_fprint_and_record_attendance(?)", emp_id)
+        .fetch_one(&pool)
+        .await
+    {
         Ok(row) => row,
         Err(e) => {
             return Err(e.to_string());
