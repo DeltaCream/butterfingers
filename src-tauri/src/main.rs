@@ -80,7 +80,7 @@ async fn enumerate_unenrolled_employees() -> String {
 }
 
 #[tauri::command]
-fn enroll_proc(emp: String, device: State<ManagedFpDevice>) -> String {
+fn enroll_proc(emp: String, device: State<FpDeviceManager>) -> String {
     //function that is called when scanning a fingerprint for enrollment
     let emp_num = match emp.trim().parse::<u64>() {
         Ok(num) => num,
@@ -345,20 +345,20 @@ pub fn enroll_cb(
 }
 
 #[tauri::command]
-fn get_device_enroll_stages(device: State<ManagedFpDevice>) -> i32 {
+fn get_device_enroll_stages(device: State<FpDeviceManager>) -> i32 {
     return device.0.as_ref().unwrap().lock().unwrap().nr_enroll_stage();
 }
 
-struct ManagedFpDevice(Option<Mutex<FpDevice>>);
-struct ManagedCancellable(Option<RwLock<Cancellable>>);
+struct FpDeviceManager(Option<Mutex<FpDevice>>,Option<RwLock<Cancellable>>);
+//struct ManagedCancellable(Option<RwLock<Cancellable>>);
 struct ManagedFprintList(Option<Mutex<Vec<FpPrint>>>);
 
-impl Default for ManagedFpDevice {
+impl Default for FpDeviceManager {
     fn default() -> Self {
         let context = FpContext::new();
         match context.devices().len() {
-            0 => Self(None),
-            _ => Self(Some(Mutex::new(context.devices().remove(0)))),
+            0 => Self(None, None),
+            _ => Self(Some(Mutex::new(context.devices().remove(0))),Some(RwLock::new(Cancellable::new()))),
         }
     }
 }
@@ -369,18 +369,18 @@ impl Default for ManagedFprintList {
     }
 }
 
-impl Default for ManagedCancellable {
-    fn default() -> Self {
-        Self(Some(RwLock::new(Cancellable::new())))
-    }
-}
+// impl Default for ManagedCancellable {
+//     fn default() -> Self {
+//         Self(Some(RwLock::new(Cancellable::new())))
+//     }
+// }
 
-impl ManagedCancellable {
+impl FpDeviceManager {
     fn cancel_managed(&self) {
-        if self.0.is_some() {
+        if self.1.is_some() {
             {
                 let cancellable =
-                    futures::executor::block_on(async { self.0.as_ref().unwrap().read().await });
+                    futures::executor::block_on(async { self.1.as_ref().unwrap().read().await });
                 cancellable.cancel();
                 assert!(cancellable.is_cancelled(), "we did not cancel!");
             }
@@ -479,9 +479,9 @@ async fn main() {
     env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
     tauri::Builder::default()
         .setup(|_app| Ok(()))
-        .manage(ManagedFpDevice::default())
+        .manage(FpDeviceManager::default())
         .manage(ManagedFprintList::default())
-        .manage(ManagedCancellable::default())
+        //.manage(ManagedCancellable::default())
         .invoke_handler(tauri::generate_handler![
             enumerate_unenrolled_employees,
             enroll_proc,
@@ -612,15 +612,15 @@ fn manual_attendance(emp: String) -> String {
     output.to_string()
 }
 #[tauri::command]
-fn cancel_identify(managed_cancellable: State<ManagedCancellable>) {
-    managed_cancellable.cancel_managed();
+fn cancel_identify(managed: State<FpDeviceManager>) {
+    managed.cancel_managed();
 }
 
 #[tauri::command]
 fn start_identify(
-    device: State<ManagedFpDevice>,
+    device: State<FpDeviceManager>,
     fingerprints: State<ManagedFprintList>,
-    managed_cancellable: State<ManagedCancellable>,
+    managed: State<FpDeviceManager>,
 ) -> String {
     println!("entering verify mode!");
 
@@ -636,7 +636,7 @@ fn start_identify(
 
     {
         let mut cancellable = futures::executor::block_on(async {
-            managed_cancellable.0.as_ref().unwrap().write().await
+            managed.1.as_ref().unwrap().write().await
         });
         if cancellable.is_cancelled() {
             *cancellable = Cancellable::new();
@@ -684,7 +684,7 @@ fn start_identify(
     let mut print_identified: Option<FpPrint> = None;
     {
         let cancellable = futures::executor::block_on(async {
-            managed_cancellable.0.as_ref().unwrap().read().await
+            managed.1.as_ref().unwrap().read().await
         });
         //identify the scanned fingerprint with identify_sync, it returns nothing if the fingerprint is not in the database, and returns a fingerprint when matched
         print_identified = match fp_scanner.identify_sync(
