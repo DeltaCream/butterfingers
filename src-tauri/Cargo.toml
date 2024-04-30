@@ -1,0 +1,32 @@
+[package]
+name = "butterfingers"
+version = "1.0.1"
+description = "Attendance Management Application for Pao Ying Foods, Inc."
+authors = ["Code Daddies"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+tauri-build = { version = "1", features = [] }
+
+[dependencies]
+tauri = { version = "1", features = [ "dialog-confirm", "shell-open"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libfprint-rs = {git = "https://github.com/dyharlan/libfprint-rs.git"}
+sqlx = { version = "0.7.2", features = ["runtime-tokio", "mysql", "macros", "time", "uuid"] } #"runtime-async-std"
+dotenvy = "0.15.7"
+dotenvy_macro = "0.15.7"
+# anyhow = "1.0.79"
+# uuid = { version = "1.8.0", features = ["v4", "fast-rng", "macro-diagnostics"] }
+dirs = "5.0.1"
+users = "0.11.0"
+prettytable = "0.10.0" # from butterfingersd-enroll
+glib = "0.19.0" # from butterfingersd-verify
+futures = "0.3.30"
+tokio = { version = "1.36.0", features = ["full"] }
+
+[features]
+# This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!
+custom-protocol = ["tauri/custom-protocol"]

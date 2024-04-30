@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <link rel="stylesheet" type="text/css" href="/styles/empToEnrollStyles.css">
+    <link rel="stylesheet" type="text/css" href="/styles/sharedStyles.css">
+    <link href="https://fonts.googleapis.com/css?family=Poppins:600&display=swap" rel="stylesheet">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pao Ying Food Inc. Attendance Viewing</title>
+    <script type="module" src="/empToEnroll.js" defer></script>
+</head>
+
+<body>
+    <header>
+        <a id="back" href="/index.html">
+            <img class="backButton" src="/assets/icons-images/back.svg"  alt="Back Button Icon">
+        </a>
+        <img class="logo" src="/assets/icons-images/PaoYingLogo.png">
+    </header>
+    <div class="title">
+        <h2>Select Employee To Enroll Fingerprint</h2>
+    </div>
+    <div class="content">
+        <input aria-label="Search Bar" type="text" placeholder="Search Name or ID" id="search" onkeyup="searchEmp()">
+        <ul class="item-list" id="item-list"></ul>
+    </div>
+</body>
+
+</html>
