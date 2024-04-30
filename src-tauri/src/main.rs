@@ -522,7 +522,12 @@ fn manual_attendance(emp: String) -> String {
     //manual attendance where an employee puts their employee ID and takes manual attendance with it
     println!("Entering manual attendance");
     println!("Emp: {}", emp);
-
+    if emp.len() > 9 {
+        return json!({
+            "responsecode" : "failure",
+            "body" : "Employee ID should be 9 characters or less. e.g. 12-345-67.",
+        }).to_string();
+    }
     let row = futures::executor::block_on(async { record_attendance(&emp,true).await }); //query_record_attendance(&emp_num).await
 
     let output = if row.is_ok() {
@@ -819,7 +824,7 @@ pub fn match_cb(
 
 async fn record_attendance(emp_id: &str, manual_attendance: bool) -> Result<MySqlRow, String> {
     //record attendance by emp_id (String type, fingerprint attendance)
-    println!("recording attendance");
+    println!("recording attendance manually");
     //setup involving the .env file
 
     let database_url = match db_url() {
