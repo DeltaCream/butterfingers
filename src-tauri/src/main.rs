@@ -82,16 +82,16 @@ async fn enumerate_unenrolled_employees() -> String {
 #[tauri::command]
 fn enroll_proc(emp: String, device: State<FpDeviceManager>) -> String {
     //function that is called when scanning a fingerprint for enrollment
-    let emp_num = match emp.trim().parse::<u64>() {
-        Ok(num) => num,
-        Err(_) => {
-            return json!({
-                "responsecode" : "failure",
-                "body" : "Invalid employee ID",
-            })
-            .to_string()
-        }
-    };
+    // let emp_num = match emp.trim().parse::<u64>() {
+    //     Ok(num) => num,
+    //     Err(_) => {
+    //         return json!({
+    //             "responsecode" : "failure",
+    //             "body" : "Invalid employee ID",
+    //         })
+    //         .to_string()
+    //     }
+    // };
 
     /*
      * Get emp_id and check if it already is enrolled.
@@ -192,7 +192,7 @@ fn enroll_proc(emp: String, device: State<FpDeviceManager>) -> String {
     };
 
     futures::executor::block_on(async {
-        match save_fprint_to_db(&emp_num, new_fprint).await {
+        match save_fprint_to_db(&emp, new_fprint).await {
             Ok(_insert) => {
                 println!("Fingerprint has been saved in the database");
                 json!({
@@ -241,7 +241,7 @@ fn enroll_proc(emp: String, device: State<FpDeviceManager>) -> String {
 //   Ok(())
 // }
 
-async fn save_fprint_to_db(emp_id: &u64, fprint: Vec<u8>) -> Result<(), String> {
+async fn save_fprint_to_db(emp_id: &String, fprint: Vec<u8>) -> Result<(), String> {
     //save a fingerprint in the database to be associated with an employee id
     let database_url = match db_url() {
         Ok(url) => url,
@@ -349,7 +349,7 @@ fn get_device_enroll_stages(device: State<FpDeviceManager>) -> i32 {
     return device.0.as_ref().unwrap().lock().unwrap().nr_enroll_stage();
 }
 
-struct FpDeviceManager(Option<Mutex<FpDevice>>,Option<RwLock<Cancellable>>);
+struct FpDeviceManager(Option<Mutex<FpDevice>>, Option<RwLock<Cancellable>>);
 //struct ManagedCancellable(Option<RwLock<Cancellable>>);
 struct ManagedFprintList(Option<Mutex<Vec<FpPrint>>>);
 
@@ -358,7 +358,10 @@ impl Default for FpDeviceManager {
         let context = FpContext::new();
         match context.devices().len() {
             0 => Self(None, None),
-            _ => Self(Some(Mutex::new(context.devices().remove(0))),Some(RwLock::new(Cancellable::new()))),
+            _ => Self(
+                Some(Mutex::new(context.devices().remove(0))),
+                Some(RwLock::new(Cancellable::new())),
+            ),
         }
     }
 }
@@ -520,11 +523,11 @@ fn manual_attendance(emp: String) -> String {
     println!("Entering manual attendance");
     println!("Emp: {}", emp);
 
-    let row = futures::executor::block_on(async { record_attendance(&emp).await }); //query_record_attendance(&emp_num).await
+    let row = futures::executor::block_on(async { record_attendance(&emp,true).await }); //query_record_attendance(&emp_num).await
 
     let output = if row.is_ok() {
         let row = row.unwrap();
-        let row_emp_id = row.get::<u64, usize>(0);
+        let row_emp_id = row.get::<String, usize>(0);
         println!("Emp ID: {}", row_emp_id);
         let row_fname = row.get::<String, usize>(1);
         println!("Fname: {}", row_fname);
@@ -635,9 +638,8 @@ fn start_identify(
     //println!("Fingerprints retrieved");
 
     {
-        let mut cancellable = futures::executor::block_on(async {
-            managed.1.as_ref().unwrap().write().await
-        });
+        let mut cancellable =
+            futures::executor::block_on(async { managed.1.as_ref().unwrap().write().await });
         if cancellable.is_cancelled() {
             *cancellable = Cancellable::new();
         }
@@ -683,9 +685,8 @@ fn start_identify(
     };
     let mut print_identified: Option<FpPrint> = None;
     {
-        let cancellable = futures::executor::block_on(async {
-            managed.1.as_ref().unwrap().read().await
-        });
+        let cancellable =
+            futures::executor::block_on(async { managed.1.as_ref().unwrap().read().await });
         //identify the scanned fingerprint with identify_sync, it returns nothing if the fingerprint is not in the database, and returns a fingerprint when matched
         print_identified = match fp_scanner.identify_sync(
             &fprint_list,
@@ -735,10 +736,10 @@ fn start_identify(
                 futures::executor::block_on(async {
                     println!("emp_id of the fingerprint: {}", emp_id);
                     println!("Before recording attendance");
-                    let result = record_attendance(&emp_id).await;
+                    let result = record_attendance(&emp_id, false).await;
                     if result.is_ok() {
                         let row = result.expect("MySqlRow should be able to be unwrapped here");
-                        let row_emp_id = row.get::<u64, usize>(0);
+                        let row_emp_id = row.get::<String, usize>(0);
                         let row_fname = row.get::<String, usize>(1);
                         let row_lname = row.get::<String, usize>(2);
                         let row_date = row.get::<time::Date, usize>(3).to_string();
@@ -816,7 +817,7 @@ pub fn match_cb(
     }
 }
 
-async fn record_attendance(emp_id: &str) -> Result<MySqlRow, String> {
+async fn record_attendance(emp_id: &str, manual_attendance: bool) -> Result<MySqlRow, String> {
     //record attendance by emp_id (String type, fingerprint attendance)
     println!("recording attendance");
     //setup involving the .env file
@@ -831,23 +832,38 @@ async fn record_attendance(emp_id: &str) -> Result<MySqlRow, String> {
         Ok(pool) => pool,
         Err(e) => return Err(e.to_string()),
     };
-
-    //query the record_attendance stored procedure (non-manual attendance)
-    let row = match sqlx::query!("CALL check_fprint_and_record_attendance(?)", emp_id)
-        .fetch_one(&pool)
-        .await
-    {
-        Ok(row) => row,
-        Err(e) => {
-            return Err(e.to_string());
+    
+    //record the attendance
+    let row: Option<MySqlRow>;
+    match manual_attendance {
+        true => {
+            row = match sqlx::query!("CALL record_attendance_by_empid(?)", emp_id)
+                .fetch_one(&pool)
+                .await
+            {
+                Ok(row) => Some(row),
+                Err(e) => {
+                    return Err(e.to_string());
+                }
+            };
+        }
+        false => {
+            row = match sqlx::query!("CALL check_fprint_and_record_attendance(?)", emp_id)
+                .fetch_one(&pool)
+                .await
+            {
+                Ok(row) => Some(row),
+                Err(e) => {
+                    return Err(e.to_string());
+                }
+            };
         }
     };
-
     pool.close().await; //close connection to database
 
     // if row.is_err() {
     //     return Err(row.err().unwrap().to_string());
     // }
 
-    Ok(row)
+    Ok(row.unwrap())
 }
