@@ -768,6 +768,8 @@ async fn main() {
         .manage(ManagedFprintList::default())
         //.manage(ManagedCancellable::default())
         .invoke_handler(tauri::generate_handler![
+            delete_fingerprint,
+            verify_fingerprint,
             enumerate_unenrolled_employees,
             enroll_proc,
             get_device_enroll_stages,
