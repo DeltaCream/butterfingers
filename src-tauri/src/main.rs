@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use libfprint_rs::{Cancellable, CancellableExt, FpContext, FpDevice, FpPrint};
 use serde_json::json;
+use sqlx::mysql::MySqlQueryResult;
 use sqlx::Row;
 use sqlx::{mysql::MySqlRow, types::time, MySqlPool};
 use std::sync::Arc;
@@ -18,27 +19,52 @@ use tokio::sync::RwLock;
 //     lname: String,
 // }
 
+//deletes fingerprint from database (however, does not affect the preloaded fingerprints unless they are reloaded)
 #[tauri::command]
-fn delete_fingerprint(emp_id: String) -> String {
+fn delete_fingerprint(emp_id: String) -> String { 
     println!("Deleting fingerprint for {}", emp_id);
 
+    futures::executor::block_on(async {
+        let result = delete_fingerprint_from_db(&emp_id).await;
+        match result {
+            Ok(result) => {
+                println!("Deleted {} rows", result.rows_affected());
+                json!({
+                    "responsecode" : "success",
+                    "body" : "Fingerprint deleted successfully"
+                })
+                .to_string()
+            },
+            Err(e) => {
+                json!({
+                    "responsecode" : "failure", 
+                    "body" : format!("Error deleting fingerprint: {}", e)
+                })
+                .to_string()
+            }
+        }
+    })
+}
+
+async fn delete_fingerprint_from_db(emp_id: &str) -> Result<MySqlQueryResult, String> {
+    //delete fingerprint from database
     let database_url = match db_url() {
         Ok(url) => url,
         Err(e) => {
-            return json!({
+            return Err(json!({
                 "error": format!("DATABASE_URL not set: {}", e)
             })
-            .to_string()
+            .to_string())
         }
     };
 
     let pool = match MySqlPool::connect(&database_url).await {
         Ok(pool) => pool,
         Err(e) => {
-            return json!({
+            return Err(json!({
                 "error": format!("Could not connect to database: {}", e)
             })
-            .to_string()
+            .to_string())
         }
     };
 
@@ -49,27 +75,19 @@ fn delete_fingerprint(emp_id: String) -> String {
         Ok(result) => result,
         Err(e) => {
             pool.close().await; //early close of the connection before returning from error
-            return json!({
+            return Err(json!({
                 "error": format!("Failed to execute query: {}", e)
             })
-            .to_string()
+            .to_string())
         }
     };
 
     pool.close().await;
-
-    println!("Deleted {} rows", result.rows_affected());
-
-    return json!({
-        "responsecode" : "success",
-        "body" : "Fingerprint deleted successfully"
-    })
-    .to_string();
-
+    Ok(result)
 }
 
 #[tauri::command]
-fn verify_fingerprint(emp_id: String, device: State<FpDeviceManager>, fingerprints: State<ManagedFprintList>) -> String {
+fn verify_fingerprint(emp_id: String, device: State<FpDeviceManager>, fingerprints: State<ManagedFprintList>, managed: State<FpDeviceManager>) -> String {
     println!("Verifying fingerprint for {}", emp_id);
 
     if device.0.is_none() {
@@ -79,13 +97,13 @@ fn verify_fingerprint(emp_id: String, device: State<FpDeviceManager>, fingerprin
         }).to_string();
     }
 
-    {
-        let mut cancellable =
-            futures::executor::block_on(async { managed.1.as_ref().unwrap().write().await });
-        if cancellable.is_cancelled() {
-            *cancellable = Cancellable::new();
-        }
-    }
+    // {
+    //     let mut cancellable =
+    //         futures::executor::block_on(async { managed.1.as_ref().unwrap().write().await });
+    //     if cancellable.is_cancelled() {
+    //         *cancellable = Cancellable::new();
+    //     }
+    // }
     
     let fp_scanner = match device.0.as_ref().unwrap().lock() {
         Ok(fp_scanner) => fp_scanner,
@@ -138,36 +156,49 @@ fn verify_fingerprint(emp_id: String, device: State<FpDeviceManager>, fingerprin
         }
     };
 
-    let mut print_identified: Option<FpPrint> = None;
+    let mut verify_result: bool = false;
     {
-        let cancellable =
-            futures::executor::block_on(async { managed.1.as_ref().unwrap().read().await });
-        //identify the scanned fingerprint with identify_sync, it returns nothing if the fingerprint is not in the database, and returns a fingerprint when matched
-        print_identified = match fp_scanner.verify_sync(
+        // let cancellable =
+        //     futures::executor::block_on(async { managed.1.as_ref().unwrap().read().await });
+        //verify the scanned fingerprint with verify_sync, it returns false if the fingerprint does not match the selected fingerprint, and returns true when matched
+        
+        /*
+        Important:
+        Verify_sync has a cancellable parameter, but it is not used in this function.
+        This is because the Cancellable type used here takes an Option<Cancellable> (gio::Cancellable in particular),
+        and comparatively, the Cancellable type used in the identify_sync uses an Option<&Cancellable>
+
+        One may choose to make the verify_sync cancellable parameter an Option<&Cancellable> instead of an Option<Cancellable>
+         */
+        verify_result = match fp_scanner.verify_sync(
             // &fprint_list,
             fprint,
-            Some(&cancellable),
+            None, //Some(&cancellable),
             Some(match_cb),
             None,
             Some(&mut new_print),
         ) {
-            Ok(print) => print,
+            Ok(verify_result) => verify_result,
             Err(e) => {
                 fp_scanner
                     .close_sync(None)
                     .expect("Could not close the fingerprint scanner");
-                if cancellable.is_cancelled() {
-                    return json!({
-                        "responsecode": "failure",
-                        "body": format!("Fingerprint Scan cancelled"),
-                    })
-                    .to_string();
-                } else {
-                    return json!({
+                // if cancellable.is_cancelled() {
+                //     return json!({
+                //         "responsecode": "failure",
+                //         "body": format!("Fingerprint Scan cancelled"),
+                //     })
+                //     .to_string();
+                // } else {
+                //     return json!({
+                //     "responsecode": "failure",
+                //     "body": format!("Could not identify fingerprint due to an error: {}", e.to_string()),
+                // }).to_string();
+                // }
+                return json!({
                     "responsecode": "failure",
                     "body": format!("Could not identify fingerprint due to an error: {}", e.to_string()),
                 }).to_string();
-                }
             }
         };
     }
@@ -183,75 +214,81 @@ fn verify_fingerprint(emp_id: String, device: State<FpDeviceManager>, fingerprin
         }
     }
 
-    if print_identified.is_some() {
-        //put another check sa db side if the preloaded fprint is in the db
-        let fprint = print_identified.expect("Print should be able to be unwrapped here");
-        let emp_id = fprint.username();
-        match emp_id {
-            Some(emp_id) => {
-                futures::executor::block_on(async {
-                    println!("emp_id of the fingerprint: {}", emp_id);
-                    println!("Before recording attendance");
-                    let result = record_attendance(&emp_id, false).await;
-                    if result.is_ok() {
-                        let row = result.expect("MySqlRow should be able to be unwrapped here");
-                        let row_emp_id = row.get::<String, usize>(0);
-                        let row_fname = row.get::<String, usize>(1);
-                        let row_lname = row.get::<String, usize>(2);
-                        let row_date = row.get::<time::Date, usize>(3).to_string();
-                        let row_time = row.get::<time::Time, usize>(4).to_string();
-                        let row_attendance_status = row.get::<u16, usize>(5);
-
-                        let msg =
-                            format!("\nAttendance recorded for {} {}\n", row_fname, row_lname);
-
-                        println!("{}", msg);
-
-                        json!({ //return the json containing the employee and the attendance details
-                            "responsecode": "success",
-                            "body": [
-                                row_emp_id,
-                                row_fname,
-                                row_lname,
-                                row_time,
-                                row_date,
-                                row_attendance_status,
-                            ]
-                        })
-                        .to_string()
-                    } else {
-                        //show that attendance could not be recorded
-                        println!("Attendance could not be recorded\n");
-                        json!({
-                            "responsecode": "failure",
-                            "body": result.err().unwrap().to_string(),
-                        })
-                        .to_string()
-                    }
-                })
-            }
-            None => {
-                println!("No employee associated with the scanned fingerprint."); //uuid did not contain a string (essentially None acts as a null value)
-                json!({
-                        "responsecode": "failure",
-                        "body": "No employee associated with the scanned fingerprint. Please try scanning again, or enroll first.",
-                    }).to_string()
-            }
-        }
+    if verify_result {
+        json!({
+            "responsecode": "success",
+            "body": "Fingerprint verified successfully", //fingerprint matched
+        }).to_string()
     } else {
-        println!("No matching fingerprint could be found.");
         json!({
             "responsecode": "failure",
-            "body": "No matching fingerprint could be found.",
-        })
-        .to_string()
+            "body": "Fingerprint not verified", //fingerprint did not match
+        }).to_string()
     }
 
-    return json!({
-        "responsecode" : "success",
-        "body" : "Fingerprint verified successfully"
-    })
-    .to_string();
+    // if verify_result {
+    //     //put another check sa db side if the preloaded fprint is in the db
+    //     let fprint = print_identified.expect("Print should be able to be unwrapped here");
+    //     let emp_id = fprint.username();
+    //     match emp_id {
+    //         Some(emp_id) => {
+    //             futures::executor::block_on(async {
+    //                 println!("emp_id of the fingerprint: {}", emp_id);
+    //                 println!("Before recording attendance");
+    //                 let result = record_attendance(&emp_id, false).await;
+    //                 if result.is_ok() {
+    //                     let row = result.expect("MySqlRow should be able to be unwrapped here");
+    //                     let row_emp_id = row.get::<String, usize>(0);
+    //                     let row_fname = row.get::<String, usize>(1);
+    //                     let row_lname = row.get::<String, usize>(2);
+    //                     let row_date = row.get::<time::Date, usize>(3).to_string();
+    //                     let row_time = row.get::<time::Time, usize>(4).to_string();
+    //                     let row_attendance_status = row.get::<u16, usize>(5);
+
+    //                     let msg =
+    //                         format!("\nAttendance recorded for {} {}\n", row_fname, row_lname);
+
+    //                     println!("{}", msg);
+
+    //                     json!({ //return the json containing the employee and the attendance details
+    //                         "responsecode": "success",
+    //                         "body": [
+    //                             row_emp_id,
+    //                             row_fname,
+    //                             row_lname,
+    //                             row_time,
+    //                             row_date,
+    //                             row_attendance_status,
+    //                         ]
+    //                     })
+    //                     .to_string()
+    //                 } else {
+    //                     //show that attendance could not be recorded
+    //                     println!("Attendance could not be recorded\n");
+    //                     json!({
+    //                         "responsecode": "failure",
+    //                         "body": result.err().unwrap().to_string(),
+    //                     })
+    //                     .to_string()
+    //                 }
+    //             })
+    //         }
+    //         None => {
+    //             println!("No employee associated with the scanned fingerprint."); //uuid did not contain a string (essentially None acts as a null value)
+    //             json!({
+    //                     "responsecode": "failure",
+    //                     "body": "No employee associated with the scanned fingerprint. Please try scanning again, or enroll first.",
+    //                 }).to_string()
+    //         }
+    //     }
+    // } else {
+    //     println!("No matching fingerprint could be found.");
+    //     json!({
+    //         "responsecode": "failure",
+    //         "body": "No matching fingerprint could be found.",
+    //     })
+    //     .to_string()
+    // }
 }
 
 #[tauri::command]
@@ -271,7 +308,6 @@ async fn enumerate_unenrolled_employees() -> String {
     let pool = match MySqlPool::connect(&database_url).await {
         Ok(pool) => pool,
         Err(e) => {
-            pool.close().await;
             return json!({
               "error": format!("Could not connect to database: {}",e)
             })
@@ -934,6 +970,7 @@ fn start_identify(
             .to_string();
         }
     };
+
     let mut print_identified: Option<FpPrint> = None;
     {
         let cancellable =
