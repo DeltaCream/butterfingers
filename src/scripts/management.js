@@ -36,11 +36,29 @@ async function verifyEmp() {
         { title: "Confirm Verify", okLabel: "Yes", });
 
     if (confirmed) {
-        // TODO: Put the INVOKE here
-        document.getElementById("selected").innerHTML = "Verify Pressed: " + " " + emp_fname + " " + emp_lname + " | " + emp_id;
-    }
+        let scanner = await invoke('check_fingerprint_scanner');
+        let scanner_json = JSON.parse(scanner);
 
-    console.log("verify pressed: " + emp_id);
+        if (scanner_json.responsecode == "failure") {
+            console.log("ERROR: " + scanner_json.body);
+            document.getElementById("selected").innerHTML = "<span class=\"error\">" + scanner_json.body + "</span>";
+            return;
+        }
+
+        let results = await invoke('verify_fingerprint', { empId: emp_id });
+        let results_json = JSON.parse(results);
+
+        if (results_json.responsecode == "failure") {
+            console.log("ERROR: " + scanner_json.body);
+            document.getElementById("selected").innerHTML = "<span class=\"error\">" + results_json.body + "</span>";
+            return;
+        } else if (results_json.responsecode == "success") {
+            document.getElementById("selected").innerHTML = "<span class=\"success\">" + results_json.body + "</span>";
+        }
+        // console.log(results_json);
+        // document.getElementById("selected").innerHTML = "Verify Pressed: " + " " + emp_fname + " " + emp_lname + " | " + emp_id;
+    }
+    // console.log("verify pressed: " + emp_id);
 }
 
 async function deleteEmp() {
@@ -60,11 +78,20 @@ async function deleteEmp() {
         { title: "Confirm Delete", okLabel: "Yes", });
 
     if (confirmed) {
-        // TODO: Put the INVOKE here
-        document.getElementById("selected").innerHTML = "<span class=\"error\">Deleted " + emp_fname + " " + emp_lname + "'s fingerprint</span>";
-    }
+        let results = await invoke('delete_fingerprint', { empId: emp_id });
+        let results_json = JSON.parse(results);
 
-    console.log("delete pressed: " + emp_id);
+        if (results_json.responsecode == "failure") {
+            console.log("ERROR: " + results_json.body);
+            document.getElementById("selected").innerHTML = "<span class=\"error\">" + results_json.body + "</span>";
+            return;
+        }
+
+        document.getElementById("selected").innerHTML = "<span class=\"error\">Deleted " + emp_fname + " " + emp_lname + "'s fingerprint</span>";
+        await dialog.message("Deleted " + emp_fname + " " + emp_lname + "'s fingerprint");
+        location.reload();
+    }
+    // console.log("delete pressed: " + emp_id);
 }
 
 async function enumerate_enrolled_employees() {
@@ -81,7 +108,7 @@ async function enumerate_enrolled_employees() {
         var emp = results_json[i];
         if (emp.hasOwnProperty("error")) {
             console.log("error: " + emp['error']);
-            //hindi nag didisplay error sa page?
+            document.getElementById("item-list").innerHTML = "<span class=\"error\">" + emp['error'] + "</span>";
             return;
         }
         if (emp.hasOwnProperty('emp_id')) {

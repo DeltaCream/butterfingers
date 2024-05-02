@@ -27,7 +27,7 @@ async function enumerate_unenrolled_employees() {
 		var emp = results_json[i];
 		if (emp.hasOwnProperty("error")) {
 			console.log("error: " + emp['error']);
-			//hindi nag didisplay error sa page?
+			document.getElementById("item-list").innerHTML = "<span class=\"error\">" + emp['error'] + "</span>";
 			return;
 		}
 		if (emp.hasOwnProperty('emp_id')) {
@@ -73,6 +73,14 @@ function addToList(id, fname, lname) {
 }
 
 async function selectEmp(id, fname, lname) {
+	let results = await invoke('check_fingerprint_scanner');
+	let results_json = JSON.parse(results);
+
+	if (results_json.responsecode == "failure") {
+		console.log("ERROR: " + results_json.body);
+		document.getElementById("message").innerHTML = "<span class=\"error\">" + results_json.body + "</span>";
+		return;
+	}
 	const confirmed = await dialog.confirm("Are you sure about enrolling " + fname + " " + lname + "'s fingerprint?",
 		{ title: "Confirm Selected Employee", okLabel: "Yes", });
 

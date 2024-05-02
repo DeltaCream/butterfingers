@@ -121,3 +121,7 @@ h2 {
 .no-employees {
     text-align: center;
 }
+
+.success {
+    color: hsl(var(--primary));
+}

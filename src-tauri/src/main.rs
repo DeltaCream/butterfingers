@@ -250,7 +250,7 @@ fn verify_fingerprint(
     } else {
         json!({
             "responsecode": "failure",
-            "body": "Fingerprint not verified", //fingerprint did not match
+            "body": "Fingerprint did not match", //fingerprint did not match
         })
         .to_string()
     }
