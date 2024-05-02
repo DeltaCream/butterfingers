@@ -156,7 +156,7 @@ fn verify_fingerprint(emp_id: String, device: State<FpDeviceManager>, fingerprin
         }
     };
 
-    let mut verify_result: bool = false;
+    let verify_result: bool;
     {
         // let cancellable =
         //     futures::executor::block_on(async { managed.1.as_ref().unwrap().read().await });
@@ -351,6 +351,68 @@ async fn enumerate_unenrolled_employees() -> String {
     }
 
     unenrolled
+}
+
+#[tauri::command]
+async fn enumerate_enrolled_employees() -> String {
+    let database_url = match db_url() {
+        Ok(url) => url,
+        Err(e) => {
+            return json!({
+              "error": format!("DATABASE_URL not set: {}", e)
+            })
+            .to_string()
+        }
+    };
+
+    println!("database_url: {}", database_url);
+
+    let pool = match MySqlPool::connect(&database_url).await {
+        Ok(pool) => pool,
+        Err(e) => {
+            return json!({
+              "error": format!("Could not connect to database: {}",e)
+            })
+            .to_string()
+        }
+    };
+
+    let result = match sqlx::query!("CALL enumerate_enrolled_employees_json")
+        .fetch_all(&pool)
+        .await
+    {
+        Ok(result) => result,
+        Err(_) => {
+            pool.close().await; //early close of the connection before returning from error
+            return json!({
+              "error" : "Failed to execute query"
+            })
+            .to_string()
+        }
+    };
+
+    pool.close().await;
+
+    //println!("Found {} unenrolled employees", result.len());
+
+    if result.is_empty() {
+        println!("No enrolled employees found");
+        return json!({
+          "error" : "No enrolled employees found"
+        })
+        .to_string();
+    }
+
+    //println!("{:?}", result.get(0).unwrap());
+
+    let mut enrolled: String = String::from("");
+
+    for row in result.iter() {
+        let json = row.get::<serde_json::Value, usize>(0);
+        enrolled = json.to_string();
+    }
+
+    enrolled
 }
 
 #[tauri::command]
@@ -771,6 +833,7 @@ async fn main() {
             delete_fingerprint,
             verify_fingerprint,
             enumerate_unenrolled_employees,
+            enumerate_enrolled_employees,
             enroll_proc,
             get_device_enroll_stages,
             start_identify,
@@ -784,7 +847,8 @@ async fn main() {
 //attendance related functions
 #[tauri::command]
 fn load_fingerprints(fingerprints: State<ManagedFprintList>) -> String {
-    let result = match futures::executor::block_on(async {
+    
+    match futures::executor::block_on(async {
         fingerprints.obtain_fingerprints_from_db().await
     }) {
         Ok(o) => json!({
@@ -797,8 +861,7 @@ fn load_fingerprints(fingerprints: State<ManagedFprintList>) -> String {
             "body" : e,
         })
         .to_string(),
-    };
-    return result;
+    }
 }
 
 #[tauri::command]
@@ -973,7 +1036,7 @@ fn start_identify(
         }
     };
 
-    let mut print_identified: Option<FpPrint> = None;
+    let print_identified: Option<FpPrint>; //initially None but is irrelevant as it will be overwritten later
     {
         let cancellable =
             futures::executor::block_on(async { managed.1.as_ref().unwrap().read().await });
@@ -1124,10 +1187,9 @@ async fn record_attendance(emp_id: &str, manual_attendance: bool) -> Result<MySq
     };
     
     //record the attendance
-    let row: Option<MySqlRow>;
-    match manual_attendance {
+    let row: Option<MySqlRow> = match manual_attendance {
         true => {
-            row = match sqlx::query!("CALL record_attendance_by_empid(?)", emp_id)
+            match sqlx::query!("CALL record_attendance_by_empid(?)", emp_id)
                 .fetch_one(&pool)
                 .await
             {
@@ -1136,10 +1198,10 @@ async fn record_attendance(emp_id: &str, manual_attendance: bool) -> Result<MySq
                     pool.close().await; //early close of the connection before returning from error
                     return Err(e.to_string());
                 }
-            };
+            }
         }
         false => {
-            row = match sqlx::query!("CALL check_fprint_and_record_attendance(?)", emp_id)
+            match sqlx::query!("CALL check_fprint_and_record_attendance(?)", emp_id)
                 .fetch_one(&pool)
                 .await
             {
@@ -1148,9 +1210,10 @@ async fn record_attendance(emp_id: &str, manual_attendance: bool) -> Result<MySq
                     pool.close().await; //early close of the connection before returning from error
                     return Err(e.to_string());
                 }
-            };
+            }
         }
     };
+    
     pool.close().await; //close connection to database
 
     // if row.is_err() {
