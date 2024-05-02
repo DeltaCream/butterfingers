@@ -16,12 +16,14 @@ async function enumerate_unenrolled_employees() {
 	//await invoke('count');
 	let results = await invoke('enumerate_unenrolled_employees');
 	let results_json = JSON.parse(results);
-	console.log(results_json);
+	// console.log(results_json);
+
+	if (results_json.length == 0) {
+		document.getElementById("item-list").innerHTML = "<span class=\"error no-employees\">No unenrolled employees</span>";
+		return;
+	}
+
 	for (var i = 0; i < results_json.length; i++) { //loop for each element
-		/*
-		add logic that if the json array is empty, show that there are no unenrolled employees
-		(depends if you want to leave the list blank or to show that there are no unenrolled employees)
-		*/
 		var emp = results_json[i];
 		if (emp.hasOwnProperty("error")) {
 			console.log("error: " + emp['error']);
@@ -45,6 +47,7 @@ async function enumerate_unenrolled_employees() {
 
 }
 
+// render items from enumerate() into page list
 function addToList(id, fname, lname) {
 	var ul = document.getElementById("item-list");
 	console.log(ul);

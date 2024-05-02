@@ -42,6 +42,7 @@ h2 {
     flex-direction: column;
     gap: 2px;
     width: 30%;
+    margin: 16px 0;
     padding: 0;
     border: 2px solid hsl(var(--secondary));
     border-radius: 8px;
@@ -49,13 +50,17 @@ h2 {
     overflow: auto;
 }
 
-.item {
+.item,
+.item-label {
     display: flex;
     gap: 18px;
     align-items: center;
     justify-content: center;
     padding: 8px;
     border-radius: 8px;
+}
+
+.item {
     border: 2px solid hsl(var(--background));
     transition: transform ease 0.3s, box-shadow ease 0.3s, border ease 0.3s;
 }
@@ -64,6 +69,53 @@ h2 {
     transform: translate(0, -1px);
     box-shadow: 0 20px 30px -10px hsl(var(--secondary));
     border: 2px solid hsl(var(--secondary));
+}
+
+.item.checked {
+    border-color: hsl(var(--primary));
+    box-shadow: 0 0 10px hsl(var(--primary));
+}
+
+.emp-radio {
+    display: none;
+}
+
+#selected {
+    font-size: var(--size-h6);
+}
+
+.buttons {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    justify-content: center;
+    margin-top: 20px;
+}
+
+
+.button {
+    width: 100%;
+    max-width: 300px;
+    background-color: hsl(var(--background));
+    border: 2px solid hsl(var(--primary));
+    padding: 0.5em 2em;
+    border-radius: 0.5rem;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.button:hover {
+    background-color: hsl(var(--primary));
+    color: hsl(var(--background));
+    cursor: pointer;
+}
+
+.button:disabled {
+    pointer-events: none;
+}
+
+.button:active {
+    box-shadow: none;
+    transform: translateY(0);
 }
 
 .no-employees {

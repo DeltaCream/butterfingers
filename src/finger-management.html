@@ -2,12 +2,12 @@
 <html lang="en">
 
 <head>
-    <link rel="stylesheet" type="text/css" href="/styles/empToEnrollStyles.css">
+    <link rel="stylesheet" type="text/css" href="/styles/managementStyles.css">
     <link rel="stylesheet" type="text/css" href="/styles/sharedStyles.css">
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pao Ying Food Inc. Attendance Viewing</title>
-    <script type="module" src="/scripts/empToEnroll.js" defer></script>
+    <script type="module" src="/scripts/management.js" defer></script>
 </head>
     <body>
         <header>
@@ -17,11 +17,17 @@
             <img class="logo" src="/assets/icons-images/PaoYingLogo.png">
         </header>
         <div class="title">
-            <h2>Select Employee To Enroll Fingerprint</h2>
+            <h2>Select Employee</h2>
+            <h4 id="selected">Select Employee Fingerprint To Verify/Edit<h4>
         </div>
         <div class="content">
             <input aria-label="Search Bar" type="text" placeholder="Search Name or ID" id="search" onkeyup="searchEmp()">
-            <ul class="item-list" id="item-list"></ul>
+            <div class="item-list" id="item-list"></div>
+
+            <div class="buttons">
+                <button id="verify" class="button">Verify</button>
+                <button id="delete" class="button">Delete</button>
+            </div>
         </div>
     </body>
 </html>
