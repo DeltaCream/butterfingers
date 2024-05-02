@@ -19,6 +19,23 @@ use tokio::sync::RwLock;
 //     lname: String,
 // }
 
+//check if fingerprint scanner is connected
+#[tauri::command]
+fn check_fingerpint_scanner(device: State<FpDeviceManager>) -> String {
+    if device.0.is_none() {
+        return json!({
+            "responsecode": "failure",
+            "body": "Device could not be opened. Please try plugging in your fingerprint scanner and restarting the app.",
+        })
+        .to_string();
+    }
+    json!({
+        "responsecode": "success",
+        "body": "Fingerprint scanner is connected",
+    })
+    .to_string()
+}
+
 //deletes fingerprint from database (however, does not affect the preloaded fingerprints unless they are reloaded)
 #[tauri::command]
 fn delete_fingerprint(emp_id: String) -> String {
@@ -841,6 +858,7 @@ async fn main() {
         .manage(ManagedFprintList::default())
         //.manage(ManagedCancellable::default())
         .invoke_handler(tauri::generate_handler![
+            check_fingerpint_scanner,
             delete_fingerprint,
             verify_fingerprint,
             enumerate_unenrolled_employees,
