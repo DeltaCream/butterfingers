@@ -21,7 +21,7 @@ use tokio::sync::RwLock;
 
 //deletes fingerprint from database (however, does not affect the preloaded fingerprints unless they are reloaded)
 #[tauri::command]
-fn delete_fingerprint(emp_id: String) -> String { 
+fn delete_fingerprint(emp_id: String) -> String {
     println!("Deleting fingerprint for {}", emp_id);
 
     futures::executor::block_on(async {
@@ -34,14 +34,12 @@ fn delete_fingerprint(emp_id: String) -> String {
                     "body" : "Fingerprint deleted successfully"
                 })
                 .to_string()
-            },
-            Err(e) => {
-                json!({
-                    "responsecode" : "failure", 
-                    "body" : format!("Error deleting fingerprint: {}", e)
-                })
-                .to_string()
             }
+            Err(e) => json!({
+                "responsecode" : "failure",
+                "body" : format!("Error deleting fingerprint: {}", e)
+            })
+            .to_string(),
         }
     })
 }
@@ -78,7 +76,7 @@ async fn delete_fingerprint_from_db(emp_id: &str) -> Result<MySqlQueryResult, St
             return Err(json!({
                 "error": format!("Failed to execute query: {}", e)
             })
-            .to_string())
+            .to_string());
         }
     };
 
@@ -87,10 +85,16 @@ async fn delete_fingerprint_from_db(emp_id: &str) -> Result<MySqlQueryResult, St
 }
 
 #[tauri::command]
-fn verify_fingerprint(emp_id: String, device: State<FpDeviceManager>, fingerprints: State<ManagedFprintList>, managed: State<FpDeviceManager>) -> String {
+fn verify_fingerprint(
+    emp_id: String,
+    device: State<FpDeviceManager>,
+    fingerprints: State<ManagedFprintList>,
+    managed: State<FpDeviceManager>,
+) -> String {
     println!("Verifying fingerprint for {}", emp_id);
 
     if device.0.is_none() {
+        //if there is no fingerprint scanner plugged in
         return json!({
             "responsecode": "failure",
             "body": "Device could not be opened. Please try plugging in your fingerprint scanner and restarting the app.",
@@ -104,7 +108,7 @@ fn verify_fingerprint(emp_id: String, device: State<FpDeviceManager>, fingerprin
     //         *cancellable = Cancellable::new();
     //     }
     // }
-    
+
     let fp_scanner = match device.0.as_ref().unwrap().lock() {
         Ok(fp_scanner) => fp_scanner,
         Err(e) => {
@@ -116,6 +120,7 @@ fn verify_fingerprint(emp_id: String, device: State<FpDeviceManager>, fingerprin
         }
     };
 
+    //try to open fingerprint scanner
     match fp_scanner.open_sync(None) {
         Ok(()) => {
             println!("Fingerprint scanner opened!");
@@ -136,21 +141,26 @@ fn verify_fingerprint(emp_id: String, device: State<FpDeviceManager>, fingerprin
         //get the list of fingerprints
         Ok(fprint_list) => fprint_list,
         Err(e) => {
-            return json!({
+            return json!({ //try to retrieve the list of fingerprints
                 "responsecode": "failure",
-                "body": format!("Could not parse list of fingerprints. Error: {}", e.to_string()),
+                "body": format!("Could not retrieve list of fingerprints. Error: {}", e.to_string()),
             })
             .to_string();
         }
     };
 
     //find the fingerprint in the list that matches the current emp_id from the preloaded fingerprints
-    let fprint = match fprint_list.iter().find(|fprint| fprint.username().expect("List of fingerprints should have a username") == emp_id) {
+    let fprint = match fprint_list.iter().find(|fprint| {
+        fprint
+            .username()
+            .expect("List of fingerprints should have a username")
+            == emp_id
+    }) {
         Some(fprint) => fprint,
         None => {
-            return json!({
+            return json!({ //normally, this error shouldn't happen
                 "responsecode": "failure",
-                "body": "Fingerprint not found in database",
+                "body": "Fingerprint not found among the preloaded fingerprints. Please try scanning again, or enroll first.",
             })
             .to_string();
         }
@@ -161,7 +171,7 @@ fn verify_fingerprint(emp_id: String, device: State<FpDeviceManager>, fingerprin
         // let cancellable =
         //     futures::executor::block_on(async { managed.1.as_ref().unwrap().read().await });
         //verify the scanned fingerprint with verify_sync, it returns false if the fingerprint does not match the selected fingerprint, and returns true when matched
-        
+
         /*
         Important:
         Verify_sync has a cancellable parameter, but it is not used in this function.
@@ -218,12 +228,14 @@ fn verify_fingerprint(emp_id: String, device: State<FpDeviceManager>, fingerprin
         json!({
             "responsecode": "success",
             "body": "Fingerprint verified successfully", //fingerprint matched
-        }).to_string()
+        })
+        .to_string()
     } else {
         json!({
             "responsecode": "failure",
             "body": "Fingerprint not verified", //fingerprint did not match
-        }).to_string()
+        })
+        .to_string()
     }
 
     // if verify_result {
@@ -325,7 +337,7 @@ async fn enumerate_unenrolled_employees() -> String {
             return json!({
               "error" : "Failed to execute query"
             })
-            .to_string()
+            .to_string();
         }
     };
 
@@ -387,7 +399,7 @@ async fn enumerate_enrolled_employees() -> String {
             return json!({
               "error" : "Failed to execute query"
             })
-            .to_string()
+            .to_string();
         }
     };
 
@@ -449,7 +461,6 @@ fn enroll_proc(emp: String, device: State<FpDeviceManager>) -> String {
             "body": "Device could not be opened. Please try plugging in your fingerprint scanner and restarting the app.",
         }).to_string();
     }
-
 
     let fp_scanner = match device.0.as_ref().unwrap().lock() {
         Ok(fp_scanner) => fp_scanner,
@@ -847,10 +858,7 @@ async fn main() {
 //attendance related functions
 #[tauri::command]
 fn load_fingerprints(fingerprints: State<ManagedFprintList>) -> String {
-    
-    match futures::executor::block_on(async {
-        fingerprints.obtain_fingerprints_from_db().await
-    }) {
+    match futures::executor::block_on(async { fingerprints.obtain_fingerprints_from_db().await }) {
         Ok(o) => json!({
             "responsecode" : "success",
             "body" : o,
@@ -873,9 +881,10 @@ fn manual_attendance(emp: String) -> String {
         return json!({
             "responsecode" : "failure",
             "body" : "Employee ID should be 9 characters or less. e.g. 12-345-67.",
-        }).to_string();
+        })
+        .to_string();
     }
-    let row = futures::executor::block_on(async { record_attendance(&emp,true).await }); //query_record_attendance(&emp_num).await
+    let row = futures::executor::block_on(async { record_attendance(&emp, true).await }); //query_record_attendance(&emp_num).await
 
     let output = if row.is_ok() {
         let row = row.unwrap();
@@ -1185,7 +1194,7 @@ async fn record_attendance(emp_id: &str, manual_attendance: bool) -> Result<MySq
         Ok(pool) => pool,
         Err(e) => return Err(e.to_string()),
     };
-    
+
     //record the attendance
     let row: Option<MySqlRow> = match manual_attendance {
         true => {
@@ -1213,7 +1222,7 @@ async fn record_attendance(emp_id: &str, manual_attendance: bool) -> Result<MySq
             }
         }
     };
-    
+
     pool.close().await; //close connection to database
 
     // if row.is_err() {
