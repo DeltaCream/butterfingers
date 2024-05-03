@@ -2,7 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use libfprint_rs::{Cancellable, CancellableExt, FpContext, FpDevice, FpPrint};
 use serde_json::json;
-use sqlx::mysql::MySqlQueryResult;
+use sqlx::mysql::{MySqlPoolOptions, MySqlQueryResult};
 use sqlx::Row;
 use sqlx::{mysql::MySqlRow, types::time, MySqlPool};
 use std::sync::Arc;
@@ -38,11 +38,13 @@ fn check_fingerprint_scanner(device: State<FpDeviceManager>) -> String {
 
 //deletes fingerprint from database (however, does not affect the preloaded fingerprints unless they are reloaded)
 #[tauri::command]
-fn delete_fingerprint(emp_id: String) -> String {
+fn delete_fingerprint(emp_id: String, pool: State<ManagedMySqlPool>) -> String {
     println!("Deleting fingerprint for {}", emp_id);
 
+    let pool = pool.0.as_ref().unwrap();
+
     futures::executor::block_on(async {
-        let result = delete_fingerprint_from_db(&emp_id).await;
+        let result = delete_fingerprint_from_db(&emp_id, pool).await;
         match result {
             Ok(result) => {
                 println!("Deleted {} rows", result.rows_affected());
@@ -61,35 +63,38 @@ fn delete_fingerprint(emp_id: String) -> String {
     })
 }
 
-async fn delete_fingerprint_from_db(emp_id: &str) -> Result<MySqlQueryResult, String> {
+async fn delete_fingerprint_from_db(
+    emp_id: &str,
+    pool: &MySqlPool,
+) -> Result<MySqlQueryResult, String> {
     //delete fingerprint from database
-    let database_url = match db_url() {
-        Ok(url) => url,
-        Err(e) => {
-            return Err(json!({
-                "error": format!("DATABASE_URL not set: {}", e)
-            })
-            .to_string())
-        }
-    };
+    // let database_url = match db_url() {
+    //     Ok(url) => url,
+    //     Err(e) => {
+    //         return Err(json!({
+    //             "error": format!("DATABASE_URL not set: {}", e)
+    //         })
+    //         .to_string())
+    //     }
+    // };
 
-    let pool = match MySqlPool::connect(&database_url).await {
-        Ok(pool) => pool,
-        Err(e) => {
-            return Err(json!({
-                "error": format!("Could not connect to database: {}", e)
-            })
-            .to_string())
-        }
-    };
+    // let pool = match MySqlPool::connect(&database_url).await {
+    //     Ok(pool) => pool,
+    //     Err(e) => {
+    //         return Err(json!({
+    //             "error": format!("Could not connect to database: {}", e)
+    //         })
+    //         .to_string())
+    //     }
+    // };
 
     let result = match sqlx::query!("DELETE FROM enrolled_fingerprints WHERE emp_id = ?", emp_id)
-        .execute(&pool)
+        .execute(pool)
         .await
     {
         Ok(result) => result,
         Err(e) => {
-            pool.close().await; //early close of the connection before returning from error
+            //pool.close().await; //early close of the connection before returning from error
             return Err(json!({
                 "error": format!("Failed to execute query: {}", e)
             })
@@ -97,7 +102,7 @@ async fn delete_fingerprint_from_db(emp_id: &str) -> Result<MySqlQueryResult, St
         }
     };
 
-    pool.close().await;
+    //pool.close().await;
     Ok(result)
 }
 
@@ -106,7 +111,7 @@ fn verify_fingerprint(
     emp_id: String,
     device: State<FpDeviceManager>,
     fingerprints: State<ManagedFprintList>,
-    managed: State<FpDeviceManager>,
+    _managed: State<FpDeviceManager>,
 ) -> String {
     println!("Verifying fingerprint for {}", emp_id);
 
@@ -321,131 +326,221 @@ fn verify_fingerprint(
 }
 
 #[tauri::command]
-async fn enumerate_unenrolled_employees() -> String {
-    let database_url = match db_url() {
-        Ok(url) => url,
-        Err(e) => {
-            return json!({
-              "error": format!("DATABASE_URL not set: {}", e)
-            })
-            .to_string()
+fn enumerate_unenrolled_employees(pool: State<ManagedMySqlPool>) -> String {
+    let pool = pool.0.as_ref().unwrap();
+
+    futures::executor::block_on(async {
+        match query_employees(pool, false).await {
+            Ok(result) => result,
+            Err(e) => {
+                //pool.close().await; //early close of the connection before returning from error
+                json!({
+                    "error": format!("Could not enumerate unenrolled employees: {}",e)
+                })
+                .to_string()
+            }
         }
-    };
+    })
 
-    println!("database_url: {}", database_url);
+    // let database_url = match db_url() {
+    //     Ok(url) => url,
+    //     Err(e) => {
+    //         return json!({
+    //           "error": format!("DATABASE_URL not set: {}", e)
+    //         })
+    //         .to_string()
+    //     }
+    // };
 
-    let pool = match MySqlPool::connect(&database_url).await {
-        Ok(pool) => pool,
-        Err(e) => {
-            return json!({
-              "error": format!("Could not connect to database: {}",e)
-            })
-            .to_string()
+    // println!("database_url: {}", database_url);
+
+    // let pool = match MySqlPool::connect(&database_url).await {
+    //     Ok(pool) => pool,
+    //     Err(e) => {
+    //         return json!({
+    //           "error": format!("Could not connect to database: {}",e)
+    //         })
+    //         .to_string()
+    //     }
+    // };
+
+    // let result = match sqlx::query!("CALL enumerate_unenrolled_employees_json")
+    //     .fetch_all(&pool)
+    //     .await
+    // {
+    //     Ok(result) => result,
+    //     Err(_) => {
+    //         pool.close().await; //early close of the connection before returning from error
+    //         return json!({
+    //           "error" : "Failed to execute query"
+    //         })
+    //         .to_string();
+    //     }
+    // };
+
+    // pool.close().await;
+
+    // //println!("Found {} unenrolled employees", result.len());
+
+    // if result.is_empty() {
+    //     println!("No unenrolled employees found");
+    //     return json!({
+    //       "error" : "No unenrolled employees found"
+    //     })
+    //     .to_string();
+    // }
+
+    // //println!("{:?}", result.get(0).unwrap());
+
+    // let mut unenrolled: String = String::from("");
+
+    // for row in result.iter() {
+    //     let json = row.get::<serde_json::Value, usize>(0);
+    //     unenrolled = json.to_string();
+    // }
+
+    // unenrolled
+}
+
+async fn query_employees(pool: &MySqlPool, enrolled: bool) -> Result<String, String> {
+    if enrolled {
+        let result = match sqlx::query!("CALL enumerate_enrolled_employees_json")
+            .fetch_all(pool)
+            .await
+        {
+            Ok(result) => result,
+            Err(_) => {
+                //pool.close().await; //early close of the connection before returning from error
+                return Err("Failed to execute query".to_string());
+            }
+        };
+
+        //pool.close().await;
+
+        if result.is_empty() {
+            return Err("No unenrolled employees found".to_string());
         }
-    };
 
-    let result = match sqlx::query!("CALL enumerate_unenrolled_employees_json")
-        .fetch_all(&pool)
-        .await
-    {
-        Ok(result) => result,
-        Err(_) => {
-            pool.close().await; //early close of the connection before returning from error
-            return json!({
-              "error" : "Failed to execute query"
-            })
-            .to_string();
+        let mut enrolled_employees: String = String::from("");
+
+        for row in result.iter() {
+            let json = row.get::<serde_json::Value, usize>(0);
+            enrolled_employees = json.to_string();
         }
-    };
 
-    pool.close().await;
+        Ok(enrolled_employees)
+    } else {
+        let result = match sqlx::query!("CALL enumerate_unenrolled_employees_json")
+            .fetch_all(pool)
+            .await
+        {
+            Ok(result) => result,
+            Err(_) => {
+                //pool.close().await; //early close of the connection before returning from error
+                return Err("Failed to execute query".to_string());
+            }
+        };
 
-    //println!("Found {} unenrolled employees", result.len());
+        //pool.close().await;
 
-    if result.is_empty() {
-        println!("No unenrolled employees found");
-        return json!({
-          "error" : "No unenrolled employees found"
-        })
-        .to_string();
+        if result.is_empty() {
+            return Err("No unenrolled employees found".to_string());
+        }
+
+        let mut unenrolled_employees: String = String::from("");
+
+        for row in result.iter() {
+            let json = row.get::<serde_json::Value, usize>(0);
+            unenrolled_employees = json.to_string();
+        }
+
+        Ok(unenrolled_employees)
     }
-
-    //println!("{:?}", result.get(0).unwrap());
-
-    let mut unenrolled: String = String::from("");
-
-    for row in result.iter() {
-        let json = row.get::<serde_json::Value, usize>(0);
-        unenrolled = json.to_string();
-    }
-
-    unenrolled
 }
 
 #[tauri::command]
-async fn enumerate_enrolled_employees() -> String {
-    let database_url = match db_url() {
-        Ok(url) => url,
-        Err(e) => {
-            return json!({
-              "error": format!("DATABASE_URL not set: {}", e)
-            })
-            .to_string()
+fn enumerate_enrolled_employees(pool: State<ManagedMySqlPool>) -> String {
+    let pool = pool.0.as_ref().unwrap();
+
+    futures::executor::block_on(async {
+        match query_employees(pool, true).await {
+            Ok(result) => result,
+            Err(e) => {
+                //pool.close().await; //early close of the connection before returning from error
+                json!({
+                    "error": format!("Could not enumerate enrolled employees: {}",e)
+                })
+                .to_string()
+            }
         }
-    };
+    })
 
-    println!("database_url: {}", database_url);
+    // let database_url = match db_url() {
+    //     Ok(url) => url,
+    //     Err(e) => {
+    //         return json!({
+    //           "error": format!("DATABASE_URL not set: {}", e)
+    //         })
+    //         .to_string()
+    //     }
+    // };
 
-    let pool = match MySqlPool::connect(&database_url).await {
-        Ok(pool) => pool,
-        Err(e) => {
-            return json!({
-              "error": format!("Could not connect to database: {}",e)
-            })
-            .to_string()
-        }
-    };
+    // println!("database_url: {}", database_url);
 
-    let result = match sqlx::query!("CALL enumerate_enrolled_employees_json")
-        .fetch_all(&pool)
-        .await
-    {
-        Ok(result) => result,
-        Err(_) => {
-            pool.close().await; //early close of the connection before returning from error
-            return json!({
-              "error" : "Failed to execute query"
-            })
-            .to_string();
-        }
-    };
+    // let pool = match MySqlPool::connect(&database_url).await {
+    //     Ok(pool) => pool,
+    //     Err(e) => {
+    //         return json!({
+    //           "error": format!("Could not connect to database: {}",e)
+    //         })
+    //         .to_string()
+    //     }
+    // };
 
-    pool.close().await;
+    // let result = match sqlx::query!("CALL enumerate_enrolled_employees_json")
+    //     .fetch_all(&pool)
+    //     .await
+    // {
+    //     Ok(result) => result,
+    //     Err(_) => {
+    //         pool.close().await; //early close of the connection before returning from error
+    //         return json!({
+    //           "error" : "Failed to execute query"
+    //         })
+    //         .to_string();
+    //     }
+    // };
 
-    //println!("Found {} unenrolled employees", result.len());
+    // pool.close().await;
 
-    if result.is_empty() {
-        println!("No enrolled employees found");
-        return json!({
-          "error" : "No enrolled employees found"
-        })
-        .to_string();
-    }
+    // //println!("Found {} unenrolled employees", result.len());
 
-    //println!("{:?}", result.get(0).unwrap());
+    // if result.is_empty() {
+    //     println!("No enrolled employees found");
+    //     return json!({
+    //       "error" : "No enrolled employees found"
+    //     })
+    //     .to_string();
+    // }
 
-    let mut enrolled: String = String::from("");
+    // //println!("{:?}", result.get(0).unwrap());
 
-    for row in result.iter() {
-        let json = row.get::<serde_json::Value, usize>(0);
-        enrolled = json.to_string();
-    }
+    // let mut enrolled: String = String::from("");
 
-    enrolled
+    // for row in result.iter() {
+    //     let json = row.get::<serde_json::Value, usize>(0);
+    //     enrolled = json.to_string();
+    // }
+
+    // enrolled
 }
 
 #[tauri::command]
-fn enroll_proc(emp: String, device: State<FpDeviceManager>) -> String {
+fn enroll_proc(
+    emp: String,
+    device: State<FpDeviceManager>,
+    pool: State<ManagedMySqlPool>,
+) -> String {
     //function that is called when scanning a fingerprint for enrollment
     // let emp_num = match emp.trim().parse::<u64>() {
     //     Ok(num) => num,
@@ -563,8 +658,10 @@ fn enroll_proc(emp: String, device: State<FpDeviceManager>) -> String {
         }
     };
 
+    let pool = pool.0.as_ref().unwrap();
+
     futures::executor::block_on(async {
-        match save_fprint_to_db(&emp, new_fprint).await {
+        match save_fprint_to_db(&emp, new_fprint, pool).await {
             Ok(_insert) => {
                 println!("Fingerprint has been saved in the database");
                 json!({
@@ -613,26 +710,30 @@ fn enroll_proc(emp: String, device: State<FpDeviceManager>) -> String {
 //   Ok(())
 // }
 
-async fn save_fprint_to_db(emp_id: &String, fprint: Vec<u8>) -> Result<(), String> {
-    //save a fingerprint in the database to be associated with an employee id
-    let database_url = match db_url() {
-        Ok(url) => url,
-        Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
-    };
+async fn save_fprint_to_db(
+    emp_id: &String,
+    fprint: Vec<u8>,
+    pool: &MySqlPool,
+) -> Result<(), String> {
+    // //save a fingerprint in the database to be associated with an employee id
+    // let database_url = match db_url() {
+    //     Ok(url) => url,
+    //     Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
+    // };
 
-    //connect to the database
-    let pool = match MySqlPool::connect(&database_url).await {
-        Ok(pool) => pool,
-        Err(e) => return Err(e.to_string()),
-    };
+    // //connect to the database
+    // let pool = match MySqlPool::connect(&database_url).await {
+    //     Ok(pool) => pool,
+    //     Err(e) => return Err(e.to_string()),
+    // };
 
     //query the record_attendance_by_empid stored procedure (manual attendance)
     match sqlx::query!("CALL save_fprint(?,?)", emp_id, fprint)
-        .execute(&pool)
+        .execute(pool)
         .await
     {
         Ok(row) => {
-            pool.close().await; //close connection to database
+            //pool.close().await; //close connection to database
             match row.rows_affected() {
                 //check how many rows were affected by the stored procedure that was previously queried
                 0 => println!("No rows affected"),
@@ -640,7 +741,7 @@ async fn save_fprint_to_db(emp_id: &String, fprint: Vec<u8>) -> Result<(), Strin
             }
         }
         Err(e) => {
-            pool.close().await; //close connection to database before returning error
+            //pool.close().await; //close connection to database before returning error
             return Err(e.to_string());
         }
     };
@@ -725,6 +826,8 @@ struct FpDeviceManager(Option<Mutex<FpDevice>>, Option<RwLock<Cancellable>>);
 //struct ManagedCancellable(Option<RwLock<Cancellable>>);
 struct ManagedFprintList(Option<Mutex<Vec<FpPrint>>>);
 
+struct ManagedMySqlPool(Option<MySqlPool>);
+
 impl Default for FpDeviceManager {
     fn default() -> Self {
         let context = FpContext::new();
@@ -780,7 +883,7 @@ impl ManagedFprintList {
             .fetch_all(&pool)
             .await;
 
-        pool.close().await; //close connection to database
+        //pool.close().await; //close connection to database
 
         if row.is_err() {
             return Err(row.err().unwrap().to_string());
@@ -849,6 +952,42 @@ impl ManagedFprintList {
     }
 }
 
+impl Default for ManagedMySqlPool {
+    fn default() -> Self {
+        let database_url = match db_url() {
+            Ok(url) => url,
+            Err(e) => {
+                // return Err(json!({
+                //     "error": format!("DATABASE_URL not set: {}", e)
+                // })
+                // .to_string())
+                println!("DATABASE_URL not set: {}", e);
+                return Self(None);
+            }
+        };
+
+        let pool = match futures::executor::block_on(async {
+            //MySqlPool::connect(&database_url).await
+            MySqlPoolOptions::new() //below will be the portion where you configure the database pool
+                .max_connections(10) //view https://docs.rs/sqlx-core/0.7.3/src/sqlx_core/pool/options.rs.html#136 for more details
+                .connect(&database_url)
+                .await
+        }) {
+            Ok(pool) => pool,
+            Err(e) => {
+                // return Err(json!({
+                //     "error": format!("Could not connect to database: {}", e)
+                // })
+                // .to_string())
+                println!("Could not connect to database: {}", e);
+                return Self(None);
+            }
+        };
+
+        Self(Some(pool))
+    }
+}
+
 #[tokio::main]
 async fn main() {
     env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
@@ -856,6 +995,7 @@ async fn main() {
         .setup(|_app| Ok(()))
         .manage(FpDeviceManager::default())
         .manage(ManagedFprintList::default())
+        .manage(ManagedMySqlPool::default())
         //.manage(ManagedCancellable::default())
         .invoke_handler(tauri::generate_handler![
             check_fingerprint_scanner,
@@ -873,6 +1013,7 @@ async fn main() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
 //attendance related functions
 #[tauri::command]
 fn load_fingerprints(fingerprints: State<ManagedFprintList>) -> String {
@@ -891,7 +1032,7 @@ fn load_fingerprints(fingerprints: State<ManagedFprintList>) -> String {
 }
 
 #[tauri::command]
-fn manual_attendance(emp: String) -> String {
+fn manual_attendance(emp: String, pool: State<ManagedMySqlPool>) -> String {
     //manual attendance where an employee puts their employee ID and takes manual attendance with it
     println!("Entering manual attendance");
     println!("Emp: {}", emp);
@@ -902,7 +1043,10 @@ fn manual_attendance(emp: String) -> String {
         })
         .to_string();
     }
-    let row = futures::executor::block_on(async { record_attendance(&emp, true).await }); //query_record_attendance(&emp_num).await
+
+    let pool = pool.0.as_ref().unwrap();
+
+    let row = futures::executor::block_on(async { record_attendance(&emp, true, pool).await }); //query_record_attendance(&emp_num).await
 
     let output = if row.is_ok() {
         let row = row.unwrap();
@@ -1003,6 +1147,7 @@ fn start_identify(
     device: State<FpDeviceManager>,
     fingerprints: State<ManagedFprintList>,
     managed: State<FpDeviceManager>,
+    pool: State<ManagedMySqlPool>,
 ) -> String {
     println!("entering verify mode!");
 
@@ -1107,6 +1252,8 @@ fn start_identify(
         }
     }
 
+    let pool = pool.0.as_ref().unwrap();
+
     if print_identified.is_some() {
         //put another check sa db side if the preloaded fprint is in the db
         let fprint = print_identified.expect("Print should be able to be unwrapped here");
@@ -1116,7 +1263,7 @@ fn start_identify(
                 futures::executor::block_on(async {
                     println!("emp_id of the fingerprint: {}", emp_id);
                     println!("Before recording attendance");
-                    let result = record_attendance(&emp_id, false).await;
+                    let result = record_attendance(&emp_id, false, pool).await; //record_attendance(&emp_id, false).await;
                     if result.is_ok() {
                         let row = result.expect("MySqlRow should be able to be unwrapped here");
                         let row_emp_id = row.get::<String, usize>(0);
@@ -1197,51 +1344,55 @@ pub fn match_cb(
     }
 }
 
-async fn record_attendance(emp_id: &str, manual_attendance: bool) -> Result<MySqlRow, String> {
+async fn record_attendance(
+    emp_id: &str,
+    manual_attendance: bool,
+    pool: &MySqlPool,
+) -> Result<MySqlRow, String> {
     //record attendance by emp_id (String type, fingerprint attendance)
     println!("recording attendance manually");
     //setup involving the .env file
 
-    let database_url = match db_url() {
-        Ok(url) => url,
-        Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
-    };
+    // let database_url = match db_url() {
+    //     Ok(url) => url,
+    //     Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
+    // };
 
-    //connect to the database
-    let pool = match MySqlPool::connect(&database_url).await {
-        Ok(pool) => pool,
-        Err(e) => return Err(e.to_string()),
-    };
+    // //connect to the database
+    // let pool = match MySqlPool::connect(&database_url).await {
+    //     Ok(pool) => pool,
+    //     Err(e) => return Err(e.to_string()),
+    // };
 
     //record the attendance
     let row: Option<MySqlRow> = match manual_attendance {
         true => {
             match sqlx::query!("CALL record_attendance_by_empid(?)", emp_id)
-                .fetch_one(&pool)
+                .fetch_one(pool)
                 .await
             {
                 Ok(row) => Some(row),
                 Err(e) => {
-                    pool.close().await; //early close of the connection before returning from error
+                    //pool.close().await; //early close of the connection before returning from error
                     return Err(e.to_string());
                 }
             }
         }
         false => {
             match sqlx::query!("CALL check_fprint_and_record_attendance(?)", emp_id)
-                .fetch_one(&pool)
+                .fetch_one(pool)
                 .await
             {
                 Ok(row) => Some(row),
                 Err(e) => {
-                    pool.close().await; //early close of the connection before returning from error
+                    //pool.close().await; //early close of the connection before returning from error
                     return Err(e.to_string());
                 }
             }
         }
     };
 
-    pool.close().await; //close connection to database
+    //pool.close().await; //close connection to database
 
     // if row.is_err() {
     //     return Err(row.err().unwrap().to_string());
