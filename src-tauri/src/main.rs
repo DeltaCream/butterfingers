@@ -10,15 +10,6 @@ use std::{env, sync::Mutex};
 use tauri::State;
 use tokio::sync::RwLock;
 
-// Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
-
-// #[derive(Serialize, Deserialize)]
-// struct Employee {
-//     emp_id: u64,
-//     fname: String,
-//     lname: String,
-// }
-
 //check if fingerprint scanner is connected
 #[tauri::command]
 fn check_fingerprint_scanner(device: State<FpDeviceManager>) -> String {
@@ -109,13 +100,11 @@ async fn delete_fingerprint_from_db(
 #[tauri::command]
 fn verify_fingerprint(
     emp_id: String,
-    device: State<FpDeviceManager>,
-    fingerprints: State<ManagedFprintList>,
-    _managed: State<FpDeviceManager>,
+    managed: State<FpDeviceManager>,
 ) -> String {
     println!("Verifying fingerprint for {}", emp_id);
 
-    if device.0.is_none() {
+    if managed.0.is_none() {
         //if there is no fingerprint scanner plugged in
         return json!({
             "responsecode": "failure",
@@ -123,15 +112,15 @@ fn verify_fingerprint(
         }).to_string();
     }
 
-    // {
-    //     let mut cancellable =
-    //         futures::executor::block_on(async { managed.1.as_ref().unwrap().write().await });
-    //     if cancellable.is_cancelled() {
-    //         *cancellable = Cancellable::new();
-    //     }
-    // }
+    {
+        let mut cancellable =
+            futures::executor::block_on(async { managed.1.as_ref().unwrap().write().await });
+        if cancellable.is_cancelled() {
+            *cancellable = Cancellable::new();
+        }
+    }
 
-    let fp_scanner = match device.0.as_ref().unwrap().lock() {
+    let fp_scanner = match managed.0.as_ref().unwrap().lock() {
         Ok(fp_scanner) => fp_scanner,
         Err(e) => {
             return json!({
@@ -159,7 +148,7 @@ fn verify_fingerprint(
     let mut new_print = FpPrint::new(&fp_scanner); //create a new fingerprint
     println!("Please scan your fingerprint");
 
-    let fprint_list = match fingerprints.0.as_ref().unwrap().lock() {
+    let fprint_list = match managed.2.as_ref().unwrap().lock() {
         //get the list of fingerprints
         Ok(fprint_list) => fprint_list,
         Err(e) => {
@@ -190,8 +179,8 @@ fn verify_fingerprint(
 
     let verify_result: bool;
     {
-        // let cancellable =
-        //     futures::executor::block_on(async { managed.1.as_ref().unwrap().read().await });
+        let cancellable =
+            futures::executor::block_on(async { managed.1.as_ref().unwrap().read().await });
         //verify the scanned fingerprint with verify_sync, it returns false if the fingerprint does not match the selected fingerprint, and returns true when matched
 
         /*
@@ -205,7 +194,7 @@ fn verify_fingerprint(
         verify_result = match fp_scanner.verify_sync(
             // &fprint_list,
             fprint,
-            None, //Some(&cancellable),
+            Some(&cancellable),
             Some(match_cb),
             None,
             Some(&mut new_print),
@@ -215,22 +204,22 @@ fn verify_fingerprint(
                 fp_scanner
                     .close_sync(None)
                     .expect("Could not close the fingerprint scanner");
-                // if cancellable.is_cancelled() {
-                //     return json!({
-                //         "responsecode": "failure",
-                //         "body": format!("Fingerprint Scan cancelled"),
-                //     })
-                //     .to_string();
-                // } else {
-                //     return json!({
-                //     "responsecode": "failure",
-                //     "body": format!("Could not identify fingerprint due to an error: {}", e.to_string()),
-                // }).to_string();
-                // }
-                return json!({
+                if cancellable.is_cancelled() {
+                    return json!({
+                        "responsecode": "failure",
+                        "body": format!("Fingerprint scan cancelled"),
+                    })
+                    .to_string();
+                } else {
+                    return json!({
                     "responsecode": "failure",
                     "body": format!("Could not identify fingerprint due to an error: {}", e.to_string()),
                 }).to_string();
+                }
+                // return json!({
+                //     "responsecode": "failure",
+                //     "body": format!("Could not identify fingerprint due to an error: {}", e.to_string()),
+                // }).to_string();
             }
         };
     }
@@ -822,9 +811,9 @@ fn get_device_enroll_stages(device: State<FpDeviceManager>) -> i32 {
     return device.0.as_ref().unwrap().lock().unwrap().nr_enroll_stage();
 }
 
-struct FpDeviceManager(Option<Mutex<FpDevice>>, Option<RwLock<Cancellable>>);
+struct FpDeviceManager(Option<Mutex<FpDevice>>, Option<RwLock<Cancellable>>,Option<Mutex<Vec<FpPrint>>>);
 //struct ManagedCancellable(Option<RwLock<Cancellable>>);
-struct ManagedFprintList(Option<Mutex<Vec<FpPrint>>>);
+//struct ManagedFprintList(Option<Mutex<Vec<FpPrint>>>);
 
 struct ManagedMySqlPool(Option<MySqlPool>);
 
@@ -832,20 +821,21 @@ impl Default for FpDeviceManager {
     fn default() -> Self {
         let context = FpContext::new();
         match context.devices().len() {
-            0 => Self(None, None),
+            0 => Self(None, None,None),
             _ => Self(
                 Some(Mutex::new(context.devices().remove(0))),
                 Some(RwLock::new(Cancellable::new())),
+                Some(Mutex::new(Vec::new())),
             ),
         }
     }
 }
 
-impl Default for ManagedFprintList {
-    fn default() -> Self {
-        Self(Some(Mutex::new(Vec::new())))
-    }
-}
+// impl Default for ManagedFprintList {
+//     fn default() -> Self {
+//         Self(Some(Mutex::new(Vec::new())))
+//     }
+// }
 
 // impl Default for ManagedCancellable {
 //     fn default() -> Self {
@@ -864,23 +854,10 @@ impl FpDeviceManager {
             }
         }
     }
-}
-
-impl ManagedFprintList {
-    async fn obtain_fingerprints_from_db(&self) -> Result<String, String> {
-        let database_url = match db_url() {
-            Ok(url) => url,
-            Err(e) => return Err(format!("DATABASE_URL not set: {}", e)),
-        };
-
-        //connect to the database
-        let pool = match MySqlPool::connect(&database_url).await {
-            Ok(pool) => pool,
-            Err(e) => return Err(e.to_string()),
-        };
-
+    async fn obtain_fingerprints_from_db(&self, pool: &MySqlPool,) -> Result<String, String> {
+       
         let row = sqlx::query!("SELECT fprint FROM enrolled_fingerprints")
-            .fetch_all(&pool)
+            .fetch_all(pool)
             .await;
 
         //pool.close().await; //close connection to database
@@ -890,7 +867,7 @@ impl ManagedFprintList {
         }
 
         let raw_fprints = row.ok().unwrap();
-        let mut managed_fprint_list = self.0.as_ref().unwrap().lock().unwrap();
+        let mut managed_fprint_list = self.2.as_ref().unwrap().lock().unwrap();
 
         if managed_fprint_list.is_empty() {
             println!("size of fprint list: {}", managed_fprint_list.len());
@@ -932,22 +909,6 @@ impl ManagedFprintList {
             }
             //*managed_fprint_list = fprint_list;
         }
-
-        //let mut fprint_list = Vec::new(); //ideally should work similar to above
-        // for fprint_file in raw_fprints {
-        //     let deserialized_print = match FpPrint::deserialize(&fprint_file.fprint) {
-        //         Ok(deserialized_print) => deserialized_print,
-        //         Err(e) => {
-        //             return Err(format!(
-        //                 "Could not deserialize one of the fingerprints: {}",
-        //                 e
-        //             )); //modified to early return in case one of the fingerprints cannot be deserialized
-        //         }
-        //     };
-        //     fprint_list.push(deserialized_print);
-        // }
-
-        // self.0 = Some(Mutex::new(fprint_list));
         Ok(String::from("Fingerprints Successfully loaded!"))
     }
 }
@@ -968,7 +929,8 @@ impl Default for ManagedMySqlPool {
 
         let pool = match futures::executor::block_on(async {
             //MySqlPool::connect(&database_url).await
-            MySqlPoolOptions::new() //below will be the portion where you configure the database pool
+            MySqlPoolOptions::new()
+                .min_connections(1) //below will be the portion where you configure the database pool
                 .max_connections(10) //view https://docs.rs/sqlx-core/0.7.3/src/sqlx_core/pool/options.rs.html#136 for more details
                 .connect(&database_url)
                 .await
@@ -994,9 +956,7 @@ async fn main() {
     tauri::Builder::default()
         .setup(|_app| Ok(()))
         .manage(FpDeviceManager::default())
-        .manage(ManagedFprintList::default())
         .manage(ManagedMySqlPool::default())
-        //.manage(ManagedCancellable::default())
         .invoke_handler(tauri::generate_handler![
             check_fingerprint_scanner,
             delete_fingerprint,
@@ -1016,8 +976,9 @@ async fn main() {
 
 //attendance related functions
 #[tauri::command]
-fn load_fingerprints(fingerprints: State<ManagedFprintList>) -> String {
-    match futures::executor::block_on(async { fingerprints.obtain_fingerprints_from_db().await }) {
+fn load_fingerprints(managed: State<FpDeviceManager>, managed_pool: State<ManagedMySqlPool>) -> String {
+    let pool = managed_pool.0.as_ref().unwrap();
+    match futures::executor::block_on(async { managed.obtain_fingerprints_from_db(&pool).await }) {
         Ok(o) => json!({
             "responsecode" : "success",
             "body" : o,
@@ -1145,7 +1106,6 @@ fn cancel_identify(managed: State<FpDeviceManager>) {
 #[tauri::command]
 fn start_identify(
     device: State<FpDeviceManager>,
-    fingerprints: State<ManagedFprintList>,
     managed: State<FpDeviceManager>,
     pool: State<ManagedMySqlPool>,
 ) -> String {
@@ -1196,7 +1156,7 @@ fn start_identify(
     let mut new_print = FpPrint::new(&fp_scanner); //create a new fingerprint
     println!("Please scan your fingerprint");
 
-    let fprint_list = match fingerprints.0.as_ref().unwrap().lock() {
+    let fprint_list = match managed.2.as_ref().unwrap().lock() {
         //get the list of fingerprints
         Ok(fprint_list) => fprint_list,
         Err(e) => {
@@ -1228,7 +1188,7 @@ fn start_identify(
                 if cancellable.is_cancelled() {
                     return json!({
                         "responsecode": "failure",
-                        "body": format!("Fingerprint Scan cancelled"),
+                        "body": format!("Fingerprint scan cancelled"),
                     })
                     .to_string();
                 } else {

@@ -1,7 +1,16 @@
 const { invoke } = window.__TAURI__.tauri;
 const { listen } = window.__TAURI__.event;
 const dialog = window.__TAURI__.dialog;
+let isOnVerify = false;
+let btnVerify = document.querySelector("#verify");
+let btnDelete = document.querySelector("#delete");
+async function load_fingerprints() {
+    return await invoke('load_fingerprints');
+}
 
+async function cancel_verify() {
+    await invoke('cancel_identify');
+}
 window.addEventListener("DOMContentLoaded", () => {
     document.getElementById("search").onkeyup = function () {
         searchEmp();
@@ -16,49 +25,69 @@ window.addEventListener("DOMContentLoaded", () => {
     }
 
     enumerate_enrolled_employees();
+    let result = load_fingerprints();
+    console.log(result);
 });
 
 // Verify Fingerprint
 async function verifyEmp() {
-
-    const selectedRadio = document.querySelector('input[name="emp"]:checked');
-    if (selectedRadio == null) {
-        // console.log("no employee selected");
-        document.getElementById("selected").innerHTML = "<span class=\"error\">No Employee Selected</span>";
-        return;
-    }
-    const employee = selectedRadio.id.split("_");
-    const emp_id = employee[0];
-    const emp_fname = employee[1];
-    const emp_lname = employee[2];
-
-    const confirmed = await dialog.confirm("Verify " + emp_fname + " " + emp_lname + "'s fingerprint?",
-        { title: "Confirm Verify", okLabel: "Yes", });
-
-    if (confirmed) {
-        let scanner = await invoke('check_fingerprint_scanner');
-        let scanner_json = JSON.parse(scanner);
-
-        if (scanner_json.responsecode == "failure") {
-            console.log("ERROR: " + scanner_json.body);
-            document.getElementById("selected").innerHTML = "<span class=\"error\">" + scanner_json.body + "</span>";
+    if (isOnVerify == false) {
+        const selectedRadio = document.querySelector('input[name="emp"]:checked');
+        if (selectedRadio == null) {
+            // console.log("no employee selected");
+            document.getElementById("selected").innerHTML = "<span class=\"error\">No Employee Selected</span>";
+            revertButtons();
             return;
         }
+        const employee = selectedRadio.id.split("_");
+        const emp_id = employee[0];
+        const emp_fname = employee[1];
+        const emp_lname = employee[2];
 
-        let results = await invoke('verify_fingerprint', { empId: emp_id });
-        let results_json = JSON.parse(results);
+        const confirmed = await dialog.confirm("Verify " + emp_fname + " " + emp_lname + "'s fingerprint?",
+            { title: "Confirm Verify", okLabel: "Yes", });
 
-        if (results_json.responsecode == "failure") {
-            console.log("ERROR: " + scanner_json.body);
-            document.getElementById("selected").innerHTML = "<span class=\"error\">" + results_json.body + "</span>";
-            return;
-        } else if (results_json.responsecode == "success") {
-            document.getElementById("selected").innerHTML = "<span class=\"success\">" + results_json.body + "</span>";
+        if (confirmed) {
+            isOnVerify = true;
+            btnVerify.textContent = "Cancel Verification";
+            btnDelete.disabled = true;
+            let scanner = await invoke('check_fingerprint_scanner');
+            let scanner_json = JSON.parse(scanner);
+
+            if (scanner_json.responsecode == "failure") {
+                console.log("ERROR: " + scanner_json.body);
+                document.getElementById("selected").innerHTML = "<span class=\"error\">" + scanner_json.body + "</span>";
+                revertButtons();
+                return;
+            }
+
+            let results = await invoke('verify_fingerprint', { empId: emp_id });
+            let results_json = JSON.parse(results);
+
+            if (results_json.responsecode == "failure") {
+                console.log("ERROR: " + scanner_json.body);
+                document.getElementById("selected").innerHTML = "<span class=\"error\">" + results_json.body + "</span>";
+                revertButtons();
+                return;
+            } else if (results_json.responsecode == "success") {
+                document.getElementById("selected").innerHTML = "<span class=\"success\">" + results_json.body + "</span>";
+                revertButtons();
+            }
+            // console.log(results_json);
+            // document.getElementById("selected").innerHTML = "Verify Pressed: " + " " + emp_fname + " " + emp_lname + " | " + emp_id;
         }
-        // console.log(results_json);
-        // document.getElementById("selected").innerHTML = "Verify Pressed: " + " " + emp_fname + " " + emp_lname + " | " + emp_id;
+        // console.log("verify pressed: " + emp_id);
+
+    } else {
+        cancel_verify();
+        revertButtons();
     }
-    // console.log("verify pressed: " + emp_id);
+}
+
+function revertButtons() {
+    isOnVerify = false;
+    btnVerify.textContent = "Verify";
+    btnDelete.disabled = false;
 }
 
 async function deleteEmp() {
@@ -73,7 +102,6 @@ async function deleteEmp() {
     const emp_fname = employee[1];
     const emp_lname = employee[2];
 
-
     const confirmed = await dialog.confirm("Delete " + emp_fname + " " + emp_lname + "'s fingerprint?",
         { title: "Confirm Delete", okLabel: "Yes", });
 
@@ -86,7 +114,6 @@ async function deleteEmp() {
             document.getElementById("selected").innerHTML = "<span class=\"error\">" + results_json.body + "</span>";
             return;
         }
-
         document.getElementById("selected").innerHTML = "<span class=\"error\">Deleted " + emp_fname + " " + emp_lname + "'s fingerprint</span>";
         await dialog.message("Deleted " + emp_fname + " " + emp_lname + "'s fingerprint");
         location.reload();
