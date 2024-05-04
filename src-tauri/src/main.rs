@@ -817,8 +817,27 @@ fn manual_attendance(emp: String, pool: State<ManagedMySqlPool>) -> String {
         println!("Time: {}", row_time);
 
         //let row_attendance_status = row.get::<u16, usize>(5);
-        let row_attendance_status = match row.try_get::<u64, usize>(5) {
-            Ok(status) => status.to_string(),
+        // let row_attendance_status = match row.try_get::<u64, usize>(5) {
+        //     Ok(status) => status.to_string(),
+        //     Err(e) => match e {
+        //         sqlx::Error::ColumnNotFound(_) => {
+        //             println!("Column not found");
+        //             "error".to_string()
+        //         }
+        //         sqlx::Error::ColumnDecode { index, source } => {
+        //             println!("Column decode error: {} at index {}", source, index);
+        //             "error".to_string()
+        //         }
+        //         _ => {
+        //             println!("Unknown error: {}", e);
+        //             "error".to_string()
+        //         }
+        //     },
+        // };
+        // println!("Attendance Status: {}", row_attendance_status);
+
+        let row_attendance_message = match row.get::<String, usize>(5) {
+            Ok(message) => message,
             Err(e) => match e {
                 sqlx::Error::ColumnNotFound(_) => {
                     println!("Column not found");
@@ -832,9 +851,9 @@ fn manual_attendance(emp: String, pool: State<ManagedMySqlPool>) -> String {
                     println!("Unknown error: {}", e);
                     "error".to_string()
                 }
-            },
+            }
         };
-        println!("Attendance Status: {}", row_attendance_status);
+        println!("Attendance Message: {}", row_attendance_message);
 
         //return the json containing the employee and the attendance details
         json!({
@@ -845,7 +864,7 @@ fn manual_attendance(emp: String, pool: State<ManagedMySqlPool>) -> String {
                 row_lname,
                 row_time,
                 row_date,
-                row_attendance_status,
+                row_attendance_message,//row_attendance_status,
            ]
         })
     } else {
@@ -996,7 +1015,8 @@ fn start_identify(
                         let row_lname = row.get::<String, usize>(2);
                         let row_date = row.get::<time::Date, usize>(3).to_string();
                         let row_time = row.get::<time::Time, usize>(4).to_string();
-                        let row_attendance_status = row.get::<u16, usize>(5);
+                        //let row_attendance_status = row.get::<u16, usize>(5);
+                        let row_attendance_message = row.get::<String, usize>(5);
 
                         let msg =
                             format!("\nAttendance recorded for {} {}\n", row_fname, row_lname);
@@ -1011,7 +1031,7 @@ fn start_identify(
                                 row_lname,
                                 row_time,
                                 row_date,
-                                row_attendance_status,
+                                row_attendance_message,//row_attendance_status,
                             ]
                         })
                         .to_string()
