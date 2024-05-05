@@ -25,63 +25,59 @@ window.addEventListener("DOMContentLoaded", () => {
   console.log(result);
 });
 
-async function load_fingerprints(){
+async function load_fingerprints() {
   return await invoke('load_fingerprints');
 }
 
-async function cancel_identify(){
+async function cancel_identify() {
   await invoke('cancel_identify');
 }
 // identify fingerprint
 async function start_identify() {
-  if(isOnIdentify == false){
+  if (isOnIdentify == false) {
     try {
       isOnIdentify = true;
       btnManual.disabled = true;
       btnIdentify.textContent = "Cancel Scan";
       const response = await invoke("start_identify");
       const result = JSON.parse(response);
-  
+
       // check if response has error key
       if (result && result.responsecode === "success") {
         const data = result.body;
         resultString.innerHTML = "<span class=\"success\">Attendance Recorded!</span>";
-  
+
         // change data
         document.querySelector("#employee-image").src = imageURL + data[0];
         document.querySelector("#employee").innerHTML = "<span class=\"success\">" + data[1] + " " + data[2] + "</span>";
         document.querySelector("#employee-id").textContent = data[0];
         document.querySelector("#date").textContent = data[4];
         document.querySelector("#time").textContent = data[3];
-        if (data[5] === 1) {
-          document.querySelector("#code").textContent = "Time-In";
-        } else {
-          document.querySelector("#code").textContent = "Time-Out";
-        }
-  
+        document.querySelector("#code").textContent = data[5];
+
         // popup employee window
         showPopup();
-  
+
         console.log("Response: " + JSON.stringify(data));
-  
+
         revertText();
       } else {
         resultString.innerHTML = "<span class=\"error\">" + result.body + "</span>";
         console.error("Error in response: " + result.body);
-  
+
         revertText();
       }
-  
+
       document.querySelector("#emp_id").value = "";
     } catch (err) {
       resultString.innerHTML = "<span class=\"error\">" + result.body + "</span>";
       console.error("Error invoking start_identify: " + result.body);
       revertText();
-    }finally {
+    } finally {
       isOnIdentify = false;
       btnIdentify.textContent = "Begin Scan";
     }
-  }else {
+  } else {
     cancel_identify();
     isOnIdentify = false;
     btnIdentify.textContent = "Begin Scan";
