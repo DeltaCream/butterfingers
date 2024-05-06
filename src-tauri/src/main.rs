@@ -836,7 +836,7 @@ fn manual_attendance(emp: String, pool: State<ManagedMySqlPool>) -> String {
         // };
         // println!("Attendance Status: {}", row_attendance_status);
 
-        let row_attendance_message = match row.get::<String, usize>(5) {
+        let row_attendance_message = match row.try_get::<String, usize>(5) {
             Ok(message) => message,
             Err(e) => match e {
                 sqlx::Error::ColumnNotFound(_) => {
