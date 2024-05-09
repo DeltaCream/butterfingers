@@ -10,6 +10,31 @@ use std::{env, sync::Mutex};
 use tauri::State;
 use tokio::sync::RwLock;
 
+/*
+use crate::utils::{
+    check_fingerprint_scanner,
+    get_device_enroll_stages,
+    load_fingerprints,
+};
+
+use crate::manage::{
+    enumerate_enrolled_employees,
+    delete_fingerprint,
+    verify_fingerprint,
+};
+
+use crate::enroll::{
+    enumerate_unenrolled_employees,
+    enroll_proc,
+};
+
+use crate::attendance::{
+    manual_attendance,
+    cancel_identify,
+    start_identify,
+};
+*/
+
 //Main Function
 #[tokio::main]
 async fn main() {
@@ -19,6 +44,17 @@ async fn main() {
         .manage(FpDeviceManager::default())
         .manage(ManagedMySqlPool::default())
         .invoke_handler(tauri::generate_handler![
+            // check_fingerprint_scanner,
+            // get_device_enroll_stages,
+            // load_fingerprints,
+            // enumerate_enrolled_employees,
+            // delete_fingerprint,
+            // verify_fingerprint,
+            // enumerate_unenrolled_employees,
+            // enroll_proc,
+            // manual_attendance,
+            // cancel_identify,
+            // start_identify,
             check_fingerprint_scanner,
             delete_fingerprint,
             verify_fingerprint,
