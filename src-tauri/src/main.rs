@@ -10,6 +10,37 @@ use std::{env, sync::Mutex};
 use tauri::State;
 use tokio::sync::RwLock;
 
+//Main Function
+#[tokio::main]
+async fn main() {
+    env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+    tauri::Builder::default()
+        .setup(|_app| Ok(()))
+        .manage(FpDeviceManager::default())
+        .manage(ManagedMySqlPool::default())
+        .invoke_handler(tauri::generate_handler![
+            check_fingerprint_scanner,
+            delete_fingerprint,
+            verify_fingerprint,
+            enumerate_unenrolled_employees,
+            enumerate_enrolled_employees,
+            enroll_proc,
+            get_device_enroll_stages,
+            start_identify,
+            manual_attendance,
+            load_fingerprints,
+            cancel_identify
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+
+/*
+    Utils Section:
+    Functions that are used in multiple commands and miscellaneous
+    Also includes struct definitions for state variables
+*/
+
 /// Check if fingerprint scanner is connected.
 /// Returns a json object with a responsecode and body.
 /// It's commonly used to check whether or not the fingerprint scanner is plugged in *before* any fingerprint commands are run.
@@ -28,6 +59,333 @@ fn check_fingerprint_scanner(device: State<FpDeviceManager>) -> String {
         "body": "Fingerprint scanner is connected",
     })
     .to_string()
+}
+
+/// Function to get the number of enroll stages for the fingerprint scanner.
+#[tauri::command]
+fn get_device_enroll_stages(device: State<FpDeviceManager>) -> i32 {
+    return device.0.as_ref().unwrap().lock().unwrap().nr_enroll_stage();
+}
+
+/// Function to get the database URL from the .env file, to be passed to sqlx::mysql::MySqlPoolOptions later when connecting to the database at the start of the program.
+fn db_url() -> Result<String, String> {
+    // match dotenvy::dotenv() {
+    //     Ok(_) => (),
+    //     Err(e) => return Err(format!("Failed to load .env file: {}", e)),
+    // }
+
+    let db_type = dotenvy_macro::dotenv!("DB_TYPE");
+    // {
+    //     Ok(db_type) => db_type,
+    //     Err(_) => return Err("DB_TYPE not set".to_string()),
+    // };
+
+    let db_username = dotenvy_macro::dotenv!("DB_USERNAME");
+    // {
+    //     Ok(username) => username,
+    //     Err(_) => return Err("DB_USERNAME not set".to_string()),
+    // };
+
+    let db_password = dotenvy_macro::dotenv!("DB_PASSWORD");
+    //  {
+    //     Ok(password) => password,
+    //     Err(_) => return Err("DB_PASSWORD not set".to_string()),
+    // };
+
+    let hostname = dotenvy_macro::dotenv!("HOSTNAME");
+    // {
+    //     Ok(name) => name,
+    //     Err(_) => return Err("HOSTNAME not set".to_string()),
+    // };
+
+    let db_port = dotenvy_macro::dotenv!("DB_PORT");
+    // {
+    //     Ok(port) => port,
+    //     Err(_) => return Err("DB_PORT not set".to_string()),
+    // };
+
+    let db_name = dotenvy_macro::dotenv!("DB_NAME");
+    // {
+    //     Ok(name) => name,
+    //     Err(_) => return Err("DB_NAME not set".to_string()),
+    // };
+
+    let db_params = dotenvy_macro::dotenv!("DB_PARAMS");
+    // {
+    //     Ok(params) => params,
+    //     Err(_) => return Err("DB_PARAMS not set".to_string()),
+    // };
+
+    let database_url = format!(
+        "{}://{}:{}@{}:{}/{}?{}",
+        db_type, db_username, db_password, hostname, db_port, db_name, db_params
+    );
+    Ok(database_url)
+}
+
+/// A struct to manage the fingerprint scanner, as well as the cancellation object and the fingerprint list.
+struct FpDeviceManager(
+    Option<Mutex<FpDevice>>,
+    Option<RwLock<Cancellable>>,
+    Option<Mutex<Vec<FpPrint>>>,
+);
+
+//struct ManagedCancellable(Option<RwLock<Cancellable>>);
+//struct ManagedFprintList(Option<Mutex<Vec<FpPrint>>>);
+
+/// A struct to manage the database connection. This is created at startup to prevent the overhead of creating a pool everytime a database query is made.
+struct ManagedMySqlPool(Option<MySqlPool>);
+
+impl Default for FpDeviceManager {
+    fn default() -> Self {
+        let context = FpContext::new();
+        match context.devices().len() {
+            0 => Self(None, None, Some(Mutex::new(Vec::new()))), //there should be a vector for the fingerprint list regardless if the fingerprint scanner is plugged in or not
+            _ => Self(
+                Some(Mutex::new(context.devices().remove(0))),
+                Some(RwLock::new(Cancellable::new())),
+                Some(Mutex::new(Vec::new())),
+            ),
+        }
+    }
+}
+
+// impl Default for ManagedFprintList {
+//     fn default() -> Self {
+//         Self(Some(Mutex::new(Vec::new())))
+//     }
+// }
+
+// impl Default for ManagedCancellable {
+//     fn default() -> Self {
+//         Self(Some(RwLock::new(Cancellable::new())))
+//     }
+// }
+
+impl FpDeviceManager {
+    /// Function to cancel the current process involving the fingerprint scanner.
+    fn cancel_managed(&self) {
+        if self.1.is_some() {
+            {
+                let cancellable =
+                    futures::executor::block_on(async { self.1.as_ref().unwrap().read().await });
+                cancellable.cancel();
+                assert!(cancellable.is_cancelled(), "we did not cancel!");
+            }
+        }
+    }
+
+    /// Function to obtain fingerprints from the database.
+    /// This function is used to dynamically load the list of enrolled fingerprints as it is called with every reload via the load_fingerprints command.
+    async fn obtain_fingerprints_from_db(&self, pool: &MySqlPool) -> Result<String, String> {
+        let row = sqlx::query!("SELECT fprint FROM enrolled_fingerprints")
+            .fetch_all(pool)
+            .await;
+
+        if row.is_err() {
+            return Err(row.err().unwrap().to_string());
+        }
+
+        // match e {
+        //     sqlx::Error::Database(e) => {
+        //         return Err(e.message().to_string());
+        //     }
+
+        //     _ => {
+        //         return Err(e.to_string());
+        //     }
+        // }
+
+        let raw_fprints = row.ok().unwrap();
+        let mut managed_fprint_list = self.2.as_ref().unwrap().lock().unwrap();
+
+        if managed_fprint_list.is_empty() {
+            println!("size of fprint list: {}", managed_fprint_list.len());
+            for fprint_file in raw_fprints {
+                let deserialized_print = match FpPrint::deserialize(&fprint_file.fprint) {
+                    Ok(deserialized_print) => deserialized_print,
+                    Err(e) => {
+                        return Err(format!(
+                            "Could not deserialize one of the fingerprints: {}",
+                            e
+                        ));
+                    }
+                };
+                managed_fprint_list.push(deserialized_print);
+            }
+        } else {
+            println!(
+                "size of fprint list before de-allocation: {}",
+                managed_fprint_list.len()
+            );
+            managed_fprint_list.clear();
+            println!(
+                "size of fprint list after de-allocation: {}",
+                managed_fprint_list.len()
+            );
+            assert!(managed_fprint_list.is_empty(), "vector is not empty!");
+            //let mut fprint_list = Vec::new();
+            for fprint_file in raw_fprints {
+                let deserialized_print = match FpPrint::deserialize(&fprint_file.fprint) {
+                    Ok(deserialized_print) => deserialized_print,
+                    Err(e) => {
+                        return Err(format!(
+                            "Could not deserialize one of the fingerprints: {}",
+                            e
+                        ));
+                    }
+                };
+                managed_fprint_list.push(deserialized_print);
+            }
+            //*managed_fprint_list = fprint_list;
+        }
+        Ok(String::from("Fingerprints Successfully loaded!"))
+    }
+}
+
+impl Default for ManagedMySqlPool {
+    fn default() -> Self {
+        let database_url = match db_url() {
+            Ok(url) => url,
+            Err(e) => {
+                println!("DATABASE_URL not set: {}", e);
+                return Self(None);
+            }
+        };
+
+        let pool = match futures::executor::block_on(async {
+            //MySqlPool::connect(&database_url).await //customized version of this line of code below
+            MySqlPoolOptions::new()
+                .min_connections(1) //below will be the portion where you configure the database pool
+                .max_connections(10) //view https://docs.rs/sqlx-core/0.7.3/src/sqlx_core/pool/options.rs.html#136 for more details
+                .connect(&database_url)
+                .await
+        }) {
+            Ok(pool) => pool,
+            Err(e) => {
+                // return Err(json!({
+                //     "error": format!("Could not connect to database: {}", e)
+                // })
+                // .to_string())
+                println!("Could not connect to database: {}", e);
+                return Self(None);
+            }
+        };
+
+        Self(Some(pool))
+    }
+}
+
+/// Load fingerprints from database. This function is called with every reload in JavaScript, and calls the obtain_fingerprints_from_db function which modifies the fingerprint list.
+#[tauri::command]
+fn load_fingerprints(
+    managed: State<FpDeviceManager>,
+    managed_pool: State<ManagedMySqlPool>,
+) -> String {
+    let pool = managed_pool.0.as_ref().unwrap();
+    match futures::executor::block_on(async { managed.obtain_fingerprints_from_db(&pool).await }) {
+        Ok(o) => json!({
+            "responsecode" : "success",
+            "body" : o,
+        })
+        .to_string(),
+        Err(e) => json!({
+            "responsecode" : "failure",
+            "body" : e,
+        })
+        .to_string(),
+    }
+}
+
+// This function is classified under utils because it is called by enumerate_unenrolled_employees() and enumerate_enrolled_employees()
+/// Function called by enumerate_unenrolled_employees() and enumerate_enrolled_employees() to retrieve employees from the database.
+/// This returns a JSON object containing the list of employees from the database.
+/// The enrolled parameter is used to determine if the list of employees requested are enrolled or unenrolled.
+/// A true value for enrolled will return the list of enrolled employees, while a false value will return the list of unenrolled employees.
+async fn query_employees(pool: &MySqlPool, enrolled: bool) -> Result<String, String> {
+    if enrolled {
+        let result = match sqlx::query!("CALL enumerate_enrolled_employees_json")
+            .fetch_all(pool)
+            .await
+        {
+            Ok(result) => result,
+            Err(e) => match e {
+                sqlx::Error::Database(e) => {
+                    return Err(e.message().to_string());
+                }
+
+                _ => {
+                    return Err(e.to_string());
+                }
+            },
+        };
+
+        if result.is_empty() {
+            return Err("No unenrolled employees found".to_string());
+        }
+
+        let mut enrolled_employees: String = String::from("");
+
+        for row in result.iter() {
+            let json = row.get::<serde_json::Value, usize>(0);
+            enrolled_employees = json.to_string();
+        }
+
+        Ok(enrolled_employees)
+    } else {
+        let result = match sqlx::query!("CALL enumerate_unenrolled_employees_json")
+            .fetch_all(pool)
+            .await
+        {
+            Ok(result) => result,
+            Err(e) => match e {
+                sqlx::Error::Database(e) => {
+                    return Err(e.message().to_string());
+                }
+
+                _ => {
+                    return Err(e.to_string());
+                }
+            },
+        };
+
+        if result.is_empty() {
+            return Err("No unenrolled employees found".to_string());
+        }
+
+        let mut unenrolled_employees: String = String::from("");
+
+        for row in result.iter() {
+            let json = row.get::<serde_json::Value, usize>(0);
+            unenrolled_employees = json.to_string();
+        }
+
+        Ok(unenrolled_employees)
+    }
+}
+
+/*
+    Manage Fingerprints and Verify Section
+    Contains functions used at the Manage Fingerprints section.
+    As verifying the fingerprints are included at Manage Fingerprints, functions involving verify_sync() fall under here.
+*/
+
+/// Function used to enumerate enrolled employees which will be candidates for fingerprint management and verification.
+/// This function returns a JSON object containing the list of enrolled employees.
+/// For errors, it returns a JSON object with an error message.
+#[tauri::command]
+fn enumerate_enrolled_employees(pool: State<ManagedMySqlPool>) -> String {
+    let pool = pool.0.as_ref().unwrap();
+
+    futures::executor::block_on(async {
+        match query_employees(pool, true).await {
+            Ok(result) => result,
+            Err(e) => json!({
+                "error": format!("Could not enumerate enrolled employees: {}",e)
+            })
+            .to_string(),
+        }
+    })
 }
 
 /// Deletes a fingerprint from the database.
@@ -229,6 +587,10 @@ fn verify_fingerprint(
     }
 }
 
+/*
+    Enroll Section
+*/
+
 /// Function used to enumerate unenrolled employees which will be candidates for enrollment.
 /// This function returns a JSON object containing the list of unenrolled employees.
 /// For errors, it returns a JSON object with an error message.
@@ -241,90 +603,6 @@ fn enumerate_unenrolled_employees(pool: State<ManagedMySqlPool>) -> String {
             Ok(result) => result,
             Err(e) => json!({
                 "error": format!("Could not enumerate unenrolled employees: {}",e)
-            })
-            .to_string(),
-        }
-    })
-}
-
-/// Function called by enumerate_unenrolled_employees() and enumerate_enrolled_employees() to retrieve employees from the database.
-/// This returns a JSON object containing the list of employees from the database.
-/// The enrolled parameter is used to determine if the list of employees requested are enrolled or unenrolled.
-/// A true value for enrolled will return the list of enrolled employees, while a false value will return the list of unenrolled employees.
-async fn query_employees(pool: &MySqlPool, enrolled: bool) -> Result<String, String> {
-    if enrolled {
-        let result = match sqlx::query!("CALL enumerate_enrolled_employees_json")
-            .fetch_all(pool)
-            .await
-        {
-            Ok(result) => result,
-            Err(e) => match e {
-                sqlx::Error::Database(e) => {
-                    return Err(e.message().to_string());
-                }
-
-                _ => {
-                    return Err(e.to_string());
-                }
-            },
-        };
-
-        if result.is_empty() {
-            return Err("No unenrolled employees found".to_string());
-        }
-
-        let mut enrolled_employees: String = String::from("");
-
-        for row in result.iter() {
-            let json = row.get::<serde_json::Value, usize>(0);
-            enrolled_employees = json.to_string();
-        }
-
-        Ok(enrolled_employees)
-    } else {
-        let result = match sqlx::query!("CALL enumerate_unenrolled_employees_json")
-            .fetch_all(pool)
-            .await
-        {
-            Ok(result) => result,
-            Err(e) => match e {
-                sqlx::Error::Database(e) => {
-                    return Err(e.message().to_string());
-                }
-
-                _ => {
-                    return Err(e.to_string());
-                }
-            },
-        };
-
-        if result.is_empty() {
-            return Err("No unenrolled employees found".to_string());
-        }
-
-        let mut unenrolled_employees: String = String::from("");
-
-        for row in result.iter() {
-            let json = row.get::<serde_json::Value, usize>(0);
-            unenrolled_employees = json.to_string();
-        }
-
-        Ok(unenrolled_employees)
-    }
-}
-
-/// Function used to enumerate enrolled employees which will be candidates for fingerprint management and verification.
-/// This function returns a JSON object containing the list of enrolled employees.
-/// For errors, it returns a JSON object with an error message.
-#[tauri::command]
-fn enumerate_enrolled_employees(pool: State<ManagedMySqlPool>) -> String {
-    let pool = pool.0.as_ref().unwrap();
-
-    futures::executor::block_on(async {
-        match query_employees(pool, true).await {
-            Ok(result) => result,
-            Err(e) => json!({
-                "error": format!("Could not enumerate enrolled employees: {}",e)
             })
             .to_string(),
         }
@@ -483,62 +761,6 @@ async fn save_fprint_to_db(
     Ok(()) //return from the function with no errors
 }
 
-/// Function to get the database URL from the .env file, to be passed to sqlx::mysql::MySqlPoolOptions later when connecting to the database at the start of the program.
-fn db_url() -> Result<String, String> {
-    // match dotenvy::dotenv() {
-    //     Ok(_) => (),
-    //     Err(e) => return Err(format!("Failed to load .env file: {}", e)),
-    // }
-
-    let db_type = dotenvy_macro::dotenv!("DB_TYPE");
-    // {
-    //     Ok(db_type) => db_type,
-    //     Err(_) => return Err("DB_TYPE not set".to_string()),
-    // };
-
-    let db_username = dotenvy_macro::dotenv!("DB_USERNAME");
-    // {
-    //     Ok(username) => username,
-    //     Err(_) => return Err("DB_USERNAME not set".to_string()),
-    // };
-
-    let db_password = dotenvy_macro::dotenv!("DB_PASSWORD");
-    //  {
-    //     Ok(password) => password,
-    //     Err(_) => return Err("DB_PASSWORD not set".to_string()),
-    // };
-
-    let hostname = dotenvy_macro::dotenv!("HOSTNAME");
-    // {
-    //     Ok(name) => name,
-    //     Err(_) => return Err("HOSTNAME not set".to_string()),
-    // };
-
-    let db_port = dotenvy_macro::dotenv!("DB_PORT");
-    // {
-    //     Ok(port) => port,
-    //     Err(_) => return Err("DB_PORT not set".to_string()),
-    // };
-
-    let db_name = dotenvy_macro::dotenv!("DB_NAME");
-    // {
-    //     Ok(name) => name,
-    //     Err(_) => return Err("DB_NAME not set".to_string()),
-    // };
-
-    let db_params = dotenvy_macro::dotenv!("DB_PARAMS");
-    // {
-    //     Ok(params) => params,
-    //     Err(_) => return Err("DB_PARAMS not set".to_string()),
-    // };
-
-    let database_url = format!(
-        "{}://{}:{}@{}:{}/{}?{}",
-        db_type, db_username, db_password, hostname, db_port, db_name, db_params
-    );
-    Ok(database_url)
-}
-
 /// A callback function for the enroll function which shows the current stage of the enroll process.
 pub fn enroll_cb(
     _device: &FpDevice,
@@ -551,209 +773,10 @@ pub fn enroll_cb(
     println!("Enroll_cb Enroll stage: {}", enroll_stage);
 }
 
-/// Function to get the number of enroll stages for the fingerprint scanner.
-#[tauri::command]
-fn get_device_enroll_stages(device: State<FpDeviceManager>) -> i32 {
-    return device.0.as_ref().unwrap().lock().unwrap().nr_enroll_stage();
-}
-
-/// A struct to manage the fingerprint scanner, as well as the cancellation object and the fingerprint list.
-struct FpDeviceManager(
-    Option<Mutex<FpDevice>>,
-    Option<RwLock<Cancellable>>,
-    Option<Mutex<Vec<FpPrint>>>,
-);
-
-//struct ManagedCancellable(Option<RwLock<Cancellable>>);
-//struct ManagedFprintList(Option<Mutex<Vec<FpPrint>>>);
-
-/// A struct to manage the database connection. This is created at startup to prevent the overhead of creating a pool everytime a database query is made.
-struct ManagedMySqlPool(Option<MySqlPool>);
-
-impl Default for FpDeviceManager {
-    fn default() -> Self {
-        let context = FpContext::new();
-        match context.devices().len() {
-            0 => Self(None, None, Some(Mutex::new(Vec::new()))), //there should be a vector for the fingerprint list regardless if the fingerprint scanner is plugged in or not
-            _ => Self(
-                Some(Mutex::new(context.devices().remove(0))),
-                Some(RwLock::new(Cancellable::new())),
-                Some(Mutex::new(Vec::new())),
-            ),
-        }
-    }
-}
-
-// impl Default for ManagedFprintList {
-//     fn default() -> Self {
-//         Self(Some(Mutex::new(Vec::new())))
-//     }
-// }
-
-// impl Default for ManagedCancellable {
-//     fn default() -> Self {
-//         Self(Some(RwLock::new(Cancellable::new())))
-//     }
-// }
-
-impl FpDeviceManager {
-    /// Function to cancel the current process involving the fingerprint scanner.
-    fn cancel_managed(&self) {
-        if self.1.is_some() {
-            {
-                let cancellable =
-                    futures::executor::block_on(async { self.1.as_ref().unwrap().read().await });
-                cancellable.cancel();
-                assert!(cancellable.is_cancelled(), "we did not cancel!");
-            }
-        }
-    }
-
-    /// Function to obtain fingerprints from the database.
-    /// This function is used to dynamically load the list of enrolled fingerprints as it is called with every reload via the load_fingerprints command.
-    async fn obtain_fingerprints_from_db(&self, pool: &MySqlPool) -> Result<String, String> {
-        let row = sqlx::query!("SELECT fprint FROM enrolled_fingerprints")
-            .fetch_all(pool)
-            .await;
-
-        if row.is_err() {
-            return Err(row.err().unwrap().to_string());
-        }
-
-        // match e {
-        //     sqlx::Error::Database(e) => {
-        //         return Err(e.message().to_string());
-        //     }
-
-        //     _ => {
-        //         return Err(e.to_string());
-        //     }
-        // }
-
-        let raw_fprints = row.ok().unwrap();
-        let mut managed_fprint_list = self.2.as_ref().unwrap().lock().unwrap();
-
-        if managed_fprint_list.is_empty() {
-            println!("size of fprint list: {}", managed_fprint_list.len());
-            for fprint_file in raw_fprints {
-                let deserialized_print = match FpPrint::deserialize(&fprint_file.fprint) {
-                    Ok(deserialized_print) => deserialized_print,
-                    Err(e) => {
-                        return Err(format!(
-                            "Could not deserialize one of the fingerprints: {}",
-                            e
-                        ));
-                    }
-                };
-                managed_fprint_list.push(deserialized_print);
-            }
-        } else {
-            println!(
-                "size of fprint list before de-allocation: {}",
-                managed_fprint_list.len()
-            );
-            managed_fprint_list.clear();
-            println!(
-                "size of fprint list after de-allocation: {}",
-                managed_fprint_list.len()
-            );
-            assert!(managed_fprint_list.is_empty(), "vector is not empty!");
-            //let mut fprint_list = Vec::new();
-            for fprint_file in raw_fprints {
-                let deserialized_print = match FpPrint::deserialize(&fprint_file.fprint) {
-                    Ok(deserialized_print) => deserialized_print,
-                    Err(e) => {
-                        return Err(format!(
-                            "Could not deserialize one of the fingerprints: {}",
-                            e
-                        ));
-                    }
-                };
-                managed_fprint_list.push(deserialized_print);
-            }
-            //*managed_fprint_list = fprint_list;
-        }
-        Ok(String::from("Fingerprints Successfully loaded!"))
-    }
-}
-
-impl Default for ManagedMySqlPool {
-    fn default() -> Self {
-        let database_url = match db_url() {
-            Ok(url) => url,
-            Err(e) => {
-                println!("DATABASE_URL not set: {}", e);
-                return Self(None);
-            }
-        };
-
-        let pool = match futures::executor::block_on(async {
-            //MySqlPool::connect(&database_url).await //customized version of this line of code below
-            MySqlPoolOptions::new()
-                .min_connections(1) //below will be the portion where you configure the database pool
-                .max_connections(10) //view https://docs.rs/sqlx-core/0.7.3/src/sqlx_core/pool/options.rs.html#136 for more details
-                .connect(&database_url)
-                .await
-        }) {
-            Ok(pool) => pool,
-            Err(e) => {
-                // return Err(json!({
-                //     "error": format!("Could not connect to database: {}", e)
-                // })
-                // .to_string())
-                println!("Could not connect to database: {}", e);
-                return Self(None);
-            }
-        };
-
-        Self(Some(pool))
-    }
-}
-
-#[tokio::main]
-async fn main() {
-    env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
-    tauri::Builder::default()
-        .setup(|_app| Ok(()))
-        .manage(FpDeviceManager::default())
-        .manage(ManagedMySqlPool::default())
-        .invoke_handler(tauri::generate_handler![
-            check_fingerprint_scanner,
-            delete_fingerprint,
-            verify_fingerprint,
-            enumerate_unenrolled_employees,
-            enumerate_enrolled_employees,
-            enroll_proc,
-            get_device_enroll_stages,
-            start_identify,
-            manual_attendance,
-            load_fingerprints,
-            cancel_identify
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
-}
-
-/// Load fingerprints from database. This function is called with every reload in JavaScript, and calls the obtain_fingerprints_from_db function which modifies the fingerprint list.
-#[tauri::command]
-fn load_fingerprints(
-    managed: State<FpDeviceManager>,
-    managed_pool: State<ManagedMySqlPool>,
-) -> String {
-    let pool = managed_pool.0.as_ref().unwrap();
-    match futures::executor::block_on(async { managed.obtain_fingerprints_from_db(&pool).await }) {
-        Ok(o) => json!({
-            "responsecode" : "success",
-            "body" : o,
-        })
-        .to_string(),
-        Err(e) => json!({
-            "responsecode" : "failure",
-            "body" : e,
-        })
-        .to_string(),
-    }
-}
+/*
+    Attendance/Identify Section:
+    All functions involving taking attendance, be it manual or by fingerprint scanner (through identify_sync()) are located in this section.
+*/
 
 /// A function for manual attendance where an employee puts their employee ID and takes manual attendance with it.
 #[tauri::command]
