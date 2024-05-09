@@ -570,7 +570,7 @@ impl Default for FpDeviceManager {
     fn default() -> Self {
         let context = FpContext::new();
         match context.devices().len() {
-            0 => Self(None, None, None),
+            0 => Self(None, None, Some(Mutex::new(Vec::new()))), //there should be a vector for the fingerprint list whether or not the fingerprint scanner is plugged in or not
             _ => Self(
                 Some(Mutex::new(context.devices().remove(0))),
                 Some(RwLock::new(Cancellable::new())),
