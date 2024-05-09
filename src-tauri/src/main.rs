@@ -89,10 +89,14 @@ async fn delete_fingerprint_from_db(
 /// On the very last section of this function lies the cases where the fingerprint scanning is successful and can either be a successful verification or not.
 /// The rest before that section are typically errors.
 #[tauri::command]
-fn verify_fingerprint(emp_id: String, managed: State<FpDeviceManager>) -> String {
+fn verify_fingerprint(
+    emp_id: String,
+    device: State<FpDeviceManager>,
+    managed: State<FpDeviceManager>,
+) -> String {
     println!("Verifying fingerprint for {}", emp_id);
 
-    if managed.0.is_none() {
+    if device.0.is_none() {
         //if there is no fingerprint scanner plugged in
         return json!({
             "responsecode": "failure",
@@ -108,12 +112,12 @@ fn verify_fingerprint(emp_id: String, managed: State<FpDeviceManager>) -> String
         }
     }
 
-    let fp_scanner = match managed.0.as_ref().unwrap().lock() {
+    let fp_scanner = match device.0.as_ref().unwrap().lock() {
         Ok(fp_scanner) => fp_scanner,
         Err(e) => {
             return json!({
                 "responsecode": "failure",
-                "body": format!("Could not open fingerprint scanner. Error: {}", e.to_string()),
+                "body": format!("Could not retrieve fingerprint scanner due to Mutex Poisoning. Error: {}", e.to_string()),
             })
             .to_string();
         }
@@ -138,11 +142,11 @@ fn verify_fingerprint(emp_id: String, managed: State<FpDeviceManager>) -> String
 
     let fprint_list = match managed.2.as_ref().unwrap().lock() {
         //get the list of fingerprints
-        Ok(fprint_list) => fprint_list,
+        Ok(fprint_list) => fprint_list, //try to retrieve the list of fingerprints
         Err(e) => {
-            return json!({ //try to retrieve the list of fingerprints
+            return json!({
                 "responsecode": "failure",
-                "body": format!("Could not retrieve list of fingerprints. Error: {}", e.to_string()),
+                "body": format!("Could not retrieve the list of fingerprints. Error: {}", e.to_string()),
             })
             .to_string();
         }
@@ -570,7 +574,7 @@ impl Default for FpDeviceManager {
     fn default() -> Self {
         let context = FpContext::new();
         match context.devices().len() {
-            0 => Self(None, None, Some(Mutex::new(Vec::new()))), //there should be a vector for the fingerprint list whether or not the fingerprint scanner is plugged in or not
+            0 => Self(None, None, Some(Mutex::new(Vec::new()))), //there should be a vector for the fingerprint list regardless if the fingerprint scanner is plugged in or not
             _ => Self(
                 Some(Mutex::new(context.devices().remove(0))),
                 Some(RwLock::new(Cancellable::new())),
@@ -851,7 +855,7 @@ fn manual_attendance(emp: String, pool: State<ManagedMySqlPool>) -> String {
                     println!("Unknown error: {}", e);
                     "error".to_string()
                 }
-            }
+            },
         };
         println!("Attendance Message: {}", row_attendance_message);
 
@@ -912,18 +916,20 @@ fn start_identify(
             *cancellable = Cancellable::new();
         }
     }
-    //
+
+    //Access the fingerprint scanner
     let fp_scanner = match device.0.as_ref().unwrap().lock() {
         Ok(fp_scanner) => fp_scanner,
         Err(e) => {
             return json!({
                 "responsecode": "failure",
-                "body": format!("Could not open fingerprint scanner. Error: {}", e.to_string()),
+                "body": format!("Could not retrieve fingerprint scanner due to Mutex Poisoning. Error: {}", e.to_string()),
             })
             .to_string();
         }
     };
 
+    //Try to open fingerprint scanner
     match fp_scanner.open_sync(None) {
         Ok(()) => {
             println!("Fingerprint scanner opened!");
@@ -942,11 +948,11 @@ fn start_identify(
 
     let fprint_list = match managed.2.as_ref().unwrap().lock() {
         //get the list of fingerprints
-        Ok(fprint_list) => fprint_list,
+        Ok(fprint_list) => fprint_list, //try to retrieve the list of fingerprints
         Err(e) => {
             return json!({
                 "responsecode": "failure",
-                "body": format!("Could not parse list of fingerprints. Error: {}", e.to_string()),
+                "body": format!("Could not retrieve the list of fingerprints. Error: {}", e.to_string()),
             })
             .to_string();
         }
