@@ -319,7 +319,7 @@ fn load_fingerprints(
     managed_pool: State<ManagedMySqlPool>,
 ) -> String {
     let pool = managed_pool.0.as_ref().unwrap();
-    match futures::executor::block_on(async { managed.obtain_fingerprints_from_db(&pool).await }) {
+    match futures::executor::block_on(async { managed.obtain_fingerprints_from_db(pool).await }) {
         Ok(o) => json!({
             "responsecode" : "success",
             "body" : o,
