@@ -17,7 +17,7 @@ let resultString = document.querySelector("#result-body");
 let btnIdentify = document.querySelector("#identify");
 let btnManual = document.querySelector("#manual");
 let isOnIdentify = false;
-const revert = 2000; // time until text revert in ms
+const revert = 3000; // time until text revert in ms
 const imageURL = "http://192.168.100.23/attendance/images/"; // change ip address
 
 window.addEventListener("DOMContentLoaded", () => {
@@ -30,7 +30,8 @@ async function load_fingerprints() {
 }
 
 async function cancel_identify() {
-  await invoke('cancel_identify');
+  console.log("Identify cancelling");
+  await invoke('cancel_function');
 }
 // identify fingerprint
 async function start_identify() {
@@ -106,11 +107,12 @@ async function manual_attendance() {
       document.querySelector("#employee-id").textContent = "ID: " + data[0];
       document.querySelector("#date").textContent = "Date: " + data[4];
       document.querySelector("#time").textContent = "Time: " + formatTime(data[3]);
-      if (data[5] == 1) {
-        document.querySelector("#code").textContent = "Action: Time-In";
-      } else {
-        document.querySelector("#code").textContent = "Action: Time-Out";
-      }
+      // if (data[5] == 1) {
+      //   document.querySelector("#code").textContent = "Action: Time-In";
+      // } else {
+      //   document.querySelector("#code").textContent = "Action: Time-Out";
+      // }
+      document.querySelector("#code").textContent = data[5];
 
       // popup employee window
       showPopup();

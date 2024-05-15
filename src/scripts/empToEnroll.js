@@ -10,6 +10,7 @@ window.addEventListener("DOMContentLoaded", () => {
 	document.getElementById("search").onkeyup = function () {
 		searchEmp();
 	};
+	
 	enumerate_unenrolled_employees();
 });
 async function enumerate_unenrolled_employees() {

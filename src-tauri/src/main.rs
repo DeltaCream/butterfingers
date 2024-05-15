@@ -65,7 +65,7 @@ async fn main() {
             start_identify,
             manual_attendance,
             load_fingerprints,
-            cancel_identify
+            cancel_function
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -651,6 +651,7 @@ fn enumerate_unenrolled_employees(pool: State<ManagedMySqlPool>) -> String {
 fn enroll_proc(
     emp: String,
     device: State<FpDeviceManager>,
+    managed: State<FpDeviceManager>,
     pool: State<ManagedMySqlPool>,
 ) -> String {
     //function that is called when scanning a fingerprint for enrollment
@@ -660,6 +661,14 @@ fn enroll_proc(
             "responsecode": "failure",
             "body": "Device could not be opened. Please try plugging in your fingerprint scanner and restarting the app.",
         }).to_string();
+    }
+
+    {
+        let mut cancellable =
+            futures::executor::block_on(async { managed.1.as_ref().unwrap().write().await });
+        if cancellable.is_cancelled() {
+            *cancellable = Cancellable::new();
+        }
     }
 
     let fp_scanner = match device.0.as_ref().unwrap().lock() {
@@ -700,19 +709,51 @@ fn enroll_proc(
 
     let counter = Arc::new(Mutex::new(0)); //a counter for the current scanning phase of the enrollment process
 
-    let new_fprint = match fp_scanner.enroll_sync(template, None, Some(enroll_cb), None) {
-        Ok(new_fprint) => new_fprint,
-        Err(_) => {
-            fp_scanner
-                .close_sync(None)
-                .expect("Could not close fingerprint scanner");
-            return json!({
-              "responsecode" : "failure",
-              "body" : "Could not enroll fingerprint",
-            })
-            .to_string();
-        }
-    };
+    // let new_fprint = match fp_scanner.enroll_sync(template, None, Some(enroll_cb), None) {
+    //     Ok(new_fprint) => new_fprint,
+    //     Err(_) => {
+    //         fp_scanner
+    //             .close_sync(None)
+    //             .expect("Could not close fingerprint scanner");
+    //         return json!({
+    //           "responsecode" : "failure",
+    //           "body" : "Could not enroll fingerprint",
+    //         })
+    //         .to_string();
+    //     }
+    // };
+
+    let new_fprint: FpPrint;
+    {
+        let cancellable =
+            futures::executor::block_on(async { managed.1.as_ref().unwrap().read().await });
+        //identify the scanned fingerprint with identify_sync, it returns nothing if the fingerprint is not in the database, and returns a fingerprint when matched
+        new_fprint = match fp_scanner.enroll_sync(
+            template,
+            Some(&cancellable),
+            Some(enroll_cb),
+            None,
+        ) {
+            Ok(print) => print,
+            Err(e) => {
+                fp_scanner
+                    .close_sync(None)
+                    .expect("Could not close the fingerprint scanner");
+                if cancellable.is_cancelled() {
+                    return json!({
+                        "responsecode": "failure",
+                        "body": format!("Fingerprint scan cancelled"),
+                    })
+                    .to_string();
+                } else {
+                    return json!({
+                    "responsecode": "failure",
+                    "body": format!("Could not enroll fingerprint due to an error: {}", e.to_string()),
+                    }).to_string();
+                }
+            }
+        };
+    }
 
     println!("Fingerprint has been scanned");
 
@@ -942,7 +983,7 @@ fn manual_attendance(emp: String, pool: State<ManagedMySqlPool>) -> String {
 
 /// Function call to cancel start_identify().
 #[tauri::command]
-fn cancel_identify(managed: State<FpDeviceManager>) {
+fn cancel_function(managed: State<FpDeviceManager>) {
     managed.cancel_managed();
 }
 

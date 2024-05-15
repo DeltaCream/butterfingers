@@ -9,8 +9,10 @@ async function load_fingerprints() {
 }
 
 async function cancel_verify() {
-    await invoke('cancel_identify');
+    console.log("Verify cancelling");
+    await invoke('cancel_function');
 }
+
 window.addEventListener("DOMContentLoaded", () => {
     document.getElementById("search").onkeyup = function () {
         searchEmp();
@@ -22,6 +24,10 @@ window.addEventListener("DOMContentLoaded", () => {
 
     document.getElementById("delete").onclick = function () {
         deleteEmp();
+    }
+
+    document.getElementById("back").onclick = function () {
+        cancel_verify();
     }
 
     enumerate_enrolled_employees();
