@@ -30,7 +30,8 @@ async function cancel_enroll() {
 //let btnCancel = document.querySelector("#cancel");
 
 async function get_enroll_stages(id, empname) {
-    let stages = await invoke('get_device_enroll_stages');
+    //let stages = await invoke('get_device_enroll_stages');
+    let stages = 5;
     console.log("Device enroll stages received");
     document.getElementById("proc-num").innerHTML = "Please press your right index finger at the fingerprint scanner " + stages + " times, making sure it blinks each time.";
     // btnCancel.style.display = "block";

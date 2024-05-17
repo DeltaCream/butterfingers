@@ -707,7 +707,7 @@ fn enroll_proc(
             .expect("Username should be included here")
     );
 
-    let counter = Arc::new(Mutex::new(0)); //a counter for the current scanning phase of the enrollment process
+    //let counter = Arc::new(Mutex::new(0)); //a counter for the current scanning phase of the enrollment process
 
     // let new_fprint = match fp_scanner.enroll_sync(template, None, Some(enroll_cb), None) {
     //     Ok(new_fprint) => new_fprint,
@@ -769,7 +769,7 @@ fn enroll_proc(
         }
     } //.expect("Device could not be closed");
 
-    println!("Total enroll stages: {}", counter.lock().unwrap());
+    //println!("Total enroll stages: {}", counter.lock().unwrap());
 
     //serialize the fingerprint
     let new_fprint = match new_fprint.serialize() {
