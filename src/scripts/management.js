@@ -67,6 +67,8 @@ async function verifyEmp() {
                 return;
             }
 
+            document.getElementById("selected").innerHTML = "Scan " + emp_fname + " " + emp_lname + "'s fingerprint for verification";
+
             let results = await invoke('verify_fingerprint', { empId: emp_id });
             let results_json = JSON.parse(results);
 
