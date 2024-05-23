@@ -100,7 +100,8 @@ fn check_fingerprint_scanner(device: State<FpDeviceManager>) -> String {
 /// Function to get the number of enroll stages for the fingerprint scanner.
 #[tauri::command]
 fn get_device_enroll_stages(device: State<FpDeviceManager>) -> i32 {
-    return device.0.as_ref().unwrap().lock().unwrap().nr_enroll_stage();
+    //return device.0.as_ref().unwrap().lock().unwrap().nr_enroll_stage();
+    return device.0.as_ref().unwrap().blocking_read().nr_enroll_stage();
 }
 
 /// Function to get the database URL from the .env file, to be passed to sqlx::mysql::MySqlPoolOptions later when connecting to the database at the start of the program.
@@ -161,7 +162,7 @@ fn db_url() -> Result<String, String> {
 
 /// A struct to manage the fingerprint scanner, as well as the cancellation object and the fingerprint list.
 struct FpDeviceManager(
-    Option<Mutex<FpDevice>>,
+    Option<RwLock<FpDevice>>, //Option<Mutex<FpDevice>>,
     Option<RwLock<Cancellable>>,
     Option<Mutex<Vec<FpPrint>>>,
 );
@@ -178,7 +179,7 @@ impl Default for FpDeviceManager {
         match context.devices().len() {
             0 => Self(None, None, Some(Mutex::new(Vec::new()))), //there should be a vector for the fingerprint list regardless if the fingerprint scanner is plugged in or not
             _ => Self(
-                Some(Mutex::new(context.devices().remove(0))),
+                Some(RwLock::new(context.devices().remove(0))),//Some(Mutex::new(context.devices().remove(0))),
                 Some(RwLock::new(Cancellable::new())),
                 Some(Mutex::new(Vec::new())),
             ),
@@ -506,16 +507,18 @@ fn verify_fingerprint(
         }
     }
 
-    let fp_scanner = match device.0.as_ref().unwrap().lock() {
-        Ok(fp_scanner) => fp_scanner,
-        Err(e) => {
-            return json!({
-                "responsecode": "failure",
-                "body": format!("Could not retrieve fingerprint scanner due to Mutex Poisoning. Error: {}", e.to_string()),
-            })
-            .to_string();
-        }
-    };
+    // let fp_scanner = match device.0.as_ref().unwrap().blocking_read() { //match device.0.as_ref().unwrap().lock() {
+    //     Ok(fp_scanner) => fp_scanner,
+    //     Err(e) => {
+    //         return json!({
+    //             "responsecode": "failure",
+    //             "body": format!("Could not retrieve fingerprint scanner due to Mutex Poisoning. Error: {}", e.to_string()),
+    //         })
+    //         .to_string();
+    //     }
+    // };
+
+    let fp_scanner = device.0.as_ref().unwrap().blocking_read();
 
     //try to open fingerprint scanner
     match fp_scanner.open_sync(None) {
@@ -671,16 +674,18 @@ fn enroll_proc(
         }
     }
 
-    let fp_scanner = match device.0.as_ref().unwrap().lock() {
-        Ok(fp_scanner) => fp_scanner,
-        Err(_) => {
-            return json!({
-              "responsecode" : "failure",
-              "body" : "Could not get device",
-            })
-            .to_string()
-        }
-    };
+    // let fp_scanner = match device.0.as_ref().unwrap().lock() {
+    //     Ok(fp_scanner) => fp_scanner,
+    //     Err(_) => {
+    //         return json!({
+    //           "responsecode" : "failure",
+    //           "body" : "Could not get device",
+    //         })
+    //         .to_string()
+    //     }
+    // };
+
+    let fp_scanner = device.0.as_ref().unwrap().blocking_read();
 
     //open the fingerprint scanner
     match fp_scanner.open_sync(None) {
@@ -1018,16 +1023,18 @@ fn start_identify(
     }
 
     //Access the fingerprint scanner
-    let fp_scanner = match device.0.as_ref().unwrap().lock() {
-        Ok(fp_scanner) => fp_scanner,
-        Err(e) => {
-            return json!({
-                "responsecode": "failure",
-                "body": format!("Could not retrieve fingerprint scanner due to Mutex Poisoning. Error: {}", e.to_string()),
-            })
-            .to_string();
-        }
-    };
+    // let fp_scanner = match device.0.as_ref().unwrap().lock() {
+    //     Ok(fp_scanner) => fp_scanner,
+    //     Err(e) => {
+    //         return json!({
+    //             "responsecode": "failure",
+    //             "body": format!("Could not retrieve fingerprint scanner due to Mutex Poisoning. Error: {}", e.to_string()),
+    //         })
+    //         .to_string();
+    //     }
+    // };
+
+    let fp_scanner = device.0.as_ref().unwrap().blocking_read();
 
     //Try to open fingerprint scanner
     match fp_scanner.open_sync(None) {
