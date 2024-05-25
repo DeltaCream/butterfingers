@@ -18,7 +18,7 @@ let btnIdentify = document.querySelector("#identify");
 let btnManual = document.querySelector("#manual");
 let isOnIdentify = false;
 const revert = 3000; // time until text revert in ms
-const imageURL = "http://192.168.100.23/attendance/images/"; // change ip address
+const imageURL = "http://localhost/attendance/images/"; // change ip address
 
 window.addEventListener("DOMContentLoaded", () => {
     let result = load_fingerprints();

@@ -101,7 +101,8 @@ fn check_fingerprint_scanner(device: State<FpDeviceManager>) -> String {
 #[tauri::command]
 fn get_device_enroll_stages(device: State<FpDeviceManager>) -> i32 {
     //return device.0.as_ref().unwrap().lock().unwrap().nr_enroll_stage();
-    return device.0.as_ref().unwrap().blocking_read().nr_enroll_stage();
+    let fp_scanner = futures::executor::block_on(async { device.0.as_ref().unwrap().read().await });
+    return fp_scanner.nr_enroll_stage();
 }
 
 /// Function to get the database URL from the .env file, to be passed to sqlx::mysql::MySqlPoolOptions later when connecting to the database at the start of the program.
@@ -518,8 +519,8 @@ fn verify_fingerprint(
     //     }
     // };
 
-    let fp_scanner = device.0.as_ref().unwrap().blocking_read();
-
+    //let fp_scanner = device.0.as_ref().unwrap().blocking_read();
+    let fp_scanner = futures::executor::block_on(async { device.0.as_ref().unwrap().read().await });
     //try to open fingerprint scanner
     match fp_scanner.open_sync(None) {
         Ok(()) => {
@@ -685,8 +686,8 @@ fn enroll_proc(
     //     }
     // };
 
-    let fp_scanner = device.0.as_ref().unwrap().blocking_read();
-
+    //let fp_scanner = device.0.as_ref().unwrap().blocking_read();
+    let fp_scanner = futures::executor::block_on(async { device.0.as_ref().unwrap().read().await });
     //open the fingerprint scanner
     match fp_scanner.open_sync(None) {
         Ok(_) => (),
@@ -1034,7 +1035,7 @@ fn start_identify(
     //     }
     // };
 
-    let fp_scanner = device.0.as_ref().unwrap().blocking_read();
+    let fp_scanner = futures::executor::block_on(async { device.0.as_ref().unwrap().read().await });
 
     //Try to open fingerprint scanner
     match fp_scanner.open_sync(None) {
