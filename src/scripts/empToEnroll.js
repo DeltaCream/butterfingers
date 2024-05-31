@@ -1,6 +1,8 @@
 const { invoke } = window.__TAURI__.tauri;
 const { listen } = window.__TAURI__.event;
 const dialog = window.__TAURI__.dialog;
+
+// event listeners and render unenrolled employees
 window.addEventListener("DOMContentLoaded", () => {
     //let queryString = window.location.search;
     //console.log(queryString);
@@ -13,6 +15,8 @@ window.addEventListener("DOMContentLoaded", () => {
 
     enumerate_unenrolled_employees();
 });
+
+// get list of unenrolled employees
 async function enumerate_unenrolled_employees() {
     //await invoke('count');
     let results = await invoke("enumerate_unenrolled_employees");
@@ -79,6 +83,7 @@ function addToList(id, fname, lname) {
     ul.appendChild(li);
 }
 
+// select an employee and check fingerprint scanner
 async function selectEmp(id, fname, lname) {
     let results = await invoke("check_fingerprint_scanner");
     let results_json = JSON.parse(results);
@@ -91,10 +96,10 @@ async function selectEmp(id, fname, lname) {
     }
     const confirmed = await dialog.confirm(
         "Are you sure about enrolling " +
-            fname +
-            " " +
-            lname +
-            "'s fingerprint?",
+        fname +
+        " " +
+        lname +
+        "'s fingerprint?",
         { title: "Confirm Selected Employee", okLabel: "Yes" }
     );
 
@@ -106,6 +111,7 @@ async function selectEmp(id, fname, lname) {
     }
 }
 
+// searchbar functionality
 function searchEmp() {
     // Declare variables
     var input, filter, items, name, id, i, txtValueName, txtValueId;

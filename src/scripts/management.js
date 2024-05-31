@@ -7,12 +7,13 @@ let btnDelete = document.querySelector("#delete");
 async function load_fingerprints() {
     return await invoke("load_fingerprints");
 }
-
+// cancel function for verification scanning
 async function cancel_verify() {
     console.log("Verify cancelling");
     await invoke("cancel_function");
 }
 
+// add event listeners and render enrolled employees
 window.addEventListener("DOMContentLoaded", () => {
     document.getElementById("search").onkeyup = function () {
         searchEmp();
@@ -37,6 +38,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
 // Verify Fingerprint
 async function verifyEmp() {
+    // check if an employee is selected
     if (isOnVerify == false) {
         const selectedRadio = document.querySelector(
             'input[name="emp"]:checked'
@@ -53,6 +55,7 @@ async function verifyEmp() {
         const emp_fname = employee[1];
         const emp_lname = employee[2];
 
+        // confirmation dialog box
         const confirmed = await dialog.confirm(
             "Verify " + emp_fname + " " + emp_lname + "'s fingerprint?",
             { title: "Confirm Verify", okLabel: "Yes" }
@@ -110,6 +113,7 @@ function revertButtons() {
     btnDelete.disabled = false;
 }
 
+// delete employee function
 async function deleteEmp() {
     const selectedRadio = document.querySelector('input[name="emp"]:checked');
     if (selectedRadio == null) {
@@ -123,6 +127,7 @@ async function deleteEmp() {
     const emp_fname = employee[1];
     const emp_lname = employee[2];
 
+    // confirmation dialog box
     const confirmed = await dialog.confirm(
         "Delete " + emp_fname + " " + emp_lname + "'s fingerprint?",
         { title: "Confirm Delete", okLabel: "Yes" }
@@ -152,9 +157,10 @@ async function deleteEmp() {
     // console.log("delete pressed: " + emp_id);
 }
 
+// get list of enrolled employees
 async function enumerate_enrolled_employees() {
     //await invoke('count');
-    let results = await invoke("enumerate_enrolled_employees"); // TODO: Change this invoke to enrolled employees
+    let results = await invoke("enumerate_enrolled_employees");
     let results_json = JSON.parse(results);
     // console.log(results_json);
 
@@ -248,6 +254,7 @@ function check(div, id, fname, lname) {
         "Selected: " + fname + " " + lname + " | " + id;
 }
 
+// search functionality
 function searchEmp() {
     // Declare variables
     var input, filter, items, name, id, i, txtValueName, txtValueId;

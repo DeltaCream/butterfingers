@@ -1,6 +1,7 @@
 const { invoke } = window.__TAURI__.tauri;
 const { listen } = window.__TAURI__.event;
 
+// eventlisteners and initial states for error checking and stuff
 window.addEventListener("DOMContentLoaded", () => {
     document.getElementById("cancel").onclick = function () {
         cancel_enroll();
@@ -24,12 +25,14 @@ window.addEventListener("DOMContentLoaded", () => {
     }
 });
 
+// cancel enroll button
 async function cancel_enroll() {
     await invoke("cancel_function"); //they use the same underlying tauri command to cancel fingerprint-related stuff
 }
 
 //let btnCancel = document.querySelector("#cancel");
 
+// get number of enrolle stages for the connected scanner
 async function get_enroll_stages(id, empname) {
     let stages = await invoke('get_device_enroll_stages');
     //let stages = 5;

@@ -20,6 +20,7 @@ let isOnIdentify = false;
 const revert = 3000; // time until text revert in ms
 const imageURL = "http://localhost/attendance/images/"; // change ip address
 
+// load fingerprints for matching
 window.addEventListener("DOMContentLoaded", () => {
     let result = load_fingerprints();
     console.log(result);
@@ -29,6 +30,7 @@ async function load_fingerprints() {
     return await invoke("load_fingerprints");
 }
 
+// cancel button for fingerprint scanning
 async function cancel_identify() {
     console.log("Identify cancelling");
     await invoke("cancel_function");
