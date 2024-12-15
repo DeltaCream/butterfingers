@@ -1,0 +1,6 @@
+//Get FpContext to get devices
+        let context = FpContext::new();
+        //Use FpContext to get devices (returns a vector/array of devices)
+        let devices = context.devices();
+        //Get the first device (which, in this case, is the only device, and it is the fingerprint scanner)
+        let fp_scanner = devices.first().expect("Devices could not be retrieved");

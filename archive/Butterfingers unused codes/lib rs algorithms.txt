@@ -1,0 +1,38 @@
+butterfingersd_enroll
+/*  algorithm:
+        check for any unenrolled employees
+        create a table showing which employees are unenrolled
+        prompt user to select an employee
+        open fingerprint scanner
+        scan fingerprint
+        enroll fingerprint
+        store fingerprint in database
+        close fingerprint scanner
+ */
+
+butterfingersd_verify
+/* Harlan's initial algorithm
+    while true{
+        scan for finger
+        select the uuid of finger
+        check if uuid exists in db
+        if exists, call record_attendance(uuid)
+        else error
+    }
+    */
+    
+    
+    /* Final working algorithm with details
+    loop {
+        check if manual attendance is needed based on the number of tries
+        if yes,
+            call manual_attendance
+        else
+            scan finger
+            select uuid
+            check if uuid exists in db
+            SELECT emp_id from employee where uuid = ?, uuid.to_string()
+            if exists, call record_attendance(uuid)
+                else println!("Fingerprint does not exist in the database")
+    }
+    */

@@ -1,0 +1,14 @@
+added lib.rs
+
+Currently, nothing has changed for main.rs, and thus the program should not break. However, just in case that lib.rs will be used, the code is already prepared.
+
+1. ordered functions (that are currently commented) in invoke_handler in order of appearance in lib.rs
+2. the ordering of the modules in lib.rs are the following:
+a. utils (miscellaneous stuff and functions used in other modules)
+b. manage (viewing enrolled employees, deleting and verifying fingerprints)
+c. enroll (enrollment)
+d. attendance (for attendance-taking functions and identify)
+
+TODO:
+A. Experiment with making lib.rs work together with main.rs (should the need arises)
+B. Experiment with access modifiers for non-tauri command functions (see which functions do not need the pub access modifier)

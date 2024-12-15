@@ -1,0 +1,74 @@
+let pool = MySqlPool::connect(&env::var("DATABASE_URL")?).await?; 
+        let result = sqlx::query!("CALL enumerate_unenrolled_employees")
+            .fetch_all(&pool)
+            .await?;
+    
+        //print how many rows found for debugging purposes
+        //println!("{} rows found", result.len());
+    
+        //check if result set is empty
+        if result.is_empty() {
+            println!("No unenrolled employees found");
+            return Ok(());
+        }
+    
+        // Display the rows in a table format
+        let mut table = Table::new();
+        // Add table headers
+        table.add_row(prettytable::Row::new(vec![
+            Cell::new("Row Number"),
+            Cell::new("Employee ID"),
+            Cell::new("First Name"),
+            Cell::new("Last Name"),
+            // ... add more headers as needed
+        ]));
+        // Add row data to the table
+        for (row_number, row) in result.iter().enumerate() {
+            let emp_id: u64 = row.get::<u64, usize>(0);//&str>("Employee ID");//.expect("Employee ID should be found here"); //bigint unsigned
+            let fname: String = row.get::<String, usize>(1); //&str>("fname");//.expect("First Name should be found here"); //varchar
+            let lname: String = row.get::<String, usize>(2);//&str>("lname");//.expect("Last Name should be found here"); //varchar
+            table.add_row(prettytable::Row::new(vec![
+                Cell::new(&row_number.to_string()),
+                Cell::new(&emp_id.to_string()),
+                Cell::new(&fname.to_string()),
+                Cell::new(&lname.to_string()),
+                // ... add more cells with row data as needed
+            ]));
+        }
+        // Print the table to the command line
+        table.printstd();
+    
+        println!("Please enter the row number corresponding to the Employee you would like to enroll: "); //take input
+        let mut line = String::new();
+        let row_num;
+    
+        loop { //while (true)
+            //read input
+            io::stdin().read_line(&mut line).expect("Input should be read here");        
+            if let Ok(num) = line.trim().parse::<usize>() {
+                if result.get(num).is_some() { //get returns Some if the row exists
+                    row_num = num; //get the value inside the Some
+                    break; //terminate the loop
+                } else { //get returns None if the row does not exist
+                    println!("Row number {num} does not exist in the table, please try again");
+                }
+            } else { //parse returns an error, will not allow negative numbers (as negative rows do not exist in the table)
+                println!("Invalid input, please try again");
+            }
+            line.clear()
+        }
+    
+        //retrieve result set
+        let row_queried = &result.get(row_num)
+            .expect("A row should be present here");
+
+        //enroll fingerprint
+        let context = FpContext::new();
+        let devices = context.devices();
+        let fp_scanner = devices.first().expect("Devices could not be retrieved");
+    
+        // println!("{:#?}", fp_scanner.scan_type()); //print the scan type of the device (for debugging purposes)
+        // println!("{:#?}", fp_scanner.features());  //print the features of the device (for debugging purposes)
+
+//get Employee ID
+        let emp_id: u64 = row_queried.get::<u64, usize>(0);

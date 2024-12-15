@@ -1,0 +1,267 @@
+use std::thread::JoinHandle;
+use std::{env, thread};
+use std::net::SocketAddr;
+use std::sync::Arc;
+use butterfingers::{butterfingersd_enroll, butterfingersd_identify, identify, enroll};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use serde_json::json;
+use tokio::sync::{Mutex, OwnedMutexGuard};
+use libfprint_rs::
+        FpContext
+    ;
+/*
+Algorithm:
+
+loop forever {
+get message from stomp broker
+add message to queue
+
+dequeue message
+if enroll:
+check if we have a current task
+if task is enroll, send the last message to resume state
+if we do, send message to server
+otherwise, spawn a thread to enroll
+
+if verify:
+check if we have a current task
+if task is verify, send the last message to resume state
+if not, send message to server
+otherwise, spawn a thread to verify
+
+if disconnect:
+destroy thread
+
+repeat loop
+}
+*/
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+
+    dotenvy::dotenv()?;
+      println!("To Butterfingers...");
+      to_butterfingers().await?;
+	
+    Ok(())
+}
+
+//static mut currMode: Arc<Mutex<String>> = Arc::new(Mutex::new(String::from("none")));
+async fn to_butterfingers() -> Result<(), anyhow::Error> {//Result<(), Box<dyn std::error::Error>> {
+    let curr_mode = Arc::new(Mutex::new(String::from("none")));
+    //declare fp device here but not open it
+    let thread_handle: Arc<Mutex<Option<thread::JoinHandle<()>>>> = Arc::new(Mutex::new(None));
+
+    let stop_flag = Arc::new(Mutex::new(false));
+
+    dotenvy::dotenv()?;
+    let listen_host = env::var("LISTEN_HOST")?;
+    let listen_port = env::var("LISTEN_PORT")?;
+
+    // let mut conn = client::connect( //returns a message stream and sender
+    //     "wss://localhost/attendance/gs-guide-websocket",
+    //     None,
+    //     None,
+    // )
+    // .await?;
+
+    // conn.send(client::subscribe("wss://localhost/attendance/gs-guide-websocket", "myid")).await?;
+
+    // loop {
+    //     conn.send(
+    //         ToServer::Send {
+    //             destination: "destination".into(),
+    //             transaction: None,
+    //             headers: None,
+    //             body: Some("message".as_bytes().to_vec()),
+    //         }
+    //         .into(),
+    //     )
+    //     .await?;
+    //     let msg = conn.next().await.transpose()?;
+    //     if let Some(FromServer::Message { body, .. }) = msg.as_ref().map(|m| &m.content) {
+    //         println!("{}", String::from_utf8_lossy(&body.as_ref().unwrap()));
+    //     } else {
+    //         anyhow::bail!("Unexpected: {:?}", msg)
+    //     }
+    //     tokio::time::sleep(Duration::from_secs(1)).await;
+    // }
+
+    let ip_port_addr = format!("{}:{}", listen_host, listen_port); //concat string
+
+    println!("{}", ip_port_addr); //print formatted ip
+    
+    let addr = ip_port_addr.parse::<SocketAddr>().unwrap(); //convert socket addr
+    //TcpListener::bind because we want to accept connections
+    let server = TcpListener::bind(&addr).await.unwrap();
+    println!("[*] Listening on {}", addr);
+    //let (tx, rx) = mpsc::channel(100);
+    loop {
+        let (client, addr) = server.accept().await.unwrap();
+        //let sender = tx.clone();
+        println!("[*] Accepted Connection from {}", addr);
+        //let mode_clone = curr_mode.clone();
+        let thread_clone = thread_handle.clone();
+        //pass fpdevice here
+        let stop_flag_clone = stop_flag.clone();
+        tokio::spawn(async move {
+            match thread_clone.try_lock_owned() {
+                Ok(thread) => {
+                    match stop_flag_clone.try_lock_owned() {
+                        Ok(stop) => {
+                            if let Err(e) = handle_client(client, thread, stop).await {
+                                eprintln!("Error handling client: {}", e);
+                            }
+                        }
+                        Err(_) => {
+                            println!("Error: unable to lock mutex");
+                            reject_client(client).await.unwrap();
+                        }
+                    }
+                }
+                Err(_) => {
+                    reject_client(client).await.unwrap();
+                },
+            }
+            
+        });
+    }
+}
+
+//response types:
+//type 0 - connect success
+//type 1 - disconnect success
+//type 2 - error
+//type 3 - plain message to identify mode
+//type 4 - plain message to enroll mode
+//type 5 - special message to identify mode
+//type 6 - special message to identify mode
+//static mut currMode: Option<String> = None;
+async fn handle_client(mut client: TcpStream, mut handle: OwnedMutexGuard<Option<JoinHandle<()>>>, mut stop_flag: OwnedMutexGuard<bool>) -> Result<(), Box<dyn std::error::Error>> { //handle client function
+    //let mut curr_mode = mode.lock().await;
+    //println!("current mode before handler: {}", *curr_mode);
+    //let mut handle_inner = handle.lock().await;
+    
+    let mut buffer = [0; 1024]; //buffer for 1024 bytes
+    let n = client.read(&mut buffer).await?; //read a response to the client via the socket
+
+    let msg_from_client = String::from_utf8_lossy(&buffer[..n]); //get the message and decode it as a string
+    println!("Message from client: {}", msg_from_client);
+    let c_msg: butterfingersd_identify::ConnectionMessage = serde_json::from_str(&msg_from_client).unwrap();
+	//println!("Passed message processing");
+    println!("[*] Received: {}", msg_from_client);
+	let response;
+	if c_msg.fingerprintMode == "disconnect"{
+		//destroy co-routine
+		if !handle.is_none()  {
+			//use mprc to end function of thread
+            *stop_flag = true;
+            // let thread_handle = handle.take().unwrap();
+            // thread_handle.join().unwrap();
+            // println!("handle: {:?}", handle);
+		}
+		
+		//close fp device here
+		close_device().unwrap();
+		//*curr_mode = "none".to_string();
+        response = json!({
+                "responseType": 1,
+                "responseMsg" : "Disconnection successful."
+        });
+    	//} else if *curr_mode != "none"{ //if device is open, send error
+    } else if !handle.is_none()  {
+        response = json!({
+            "responseType": 2,
+            "responseMsg" : "Another procedure is using the scanner!"
+        });
+	} else if handle.is_none()  && c_msg.fingerprintMode == "enroll" {
+		//call enroll and pass fpdevice handle and emp id
+        if let Some(emp_id) = c_msg.empID {
+            // *handle = Some(thread::spawn(move || {
+            //     println!("Before identify");
+            //     enroll(emp_id); 
+            //     println!("After identify");
+            // }));
+            response = json!({
+                "responseType": 0,
+                "responseMsg" : "Enrollment mode started."
+            });
+        } else { // if the empID is not none
+            response = json!({
+                "responseType": 2,
+                "responseMsg" : "Employee ID not specified!"
+            });
+        }
+		
+	} else if handle.is_none() && c_msg.fingerprintMode == "identify" {
+		//call identify and pass fpdevice handle
+		//*curr_mode = "identify".to_string();
+        //identify().await;
+        //identify().await;
+        // {
+        //     let stop_flag_clone = stop_flag.clone();
+        //     *stop_flag_clone.lock().unwrap() = false;
+        // }
+        
+        // drop(stop_flag_clone);
+        // *handle = Some(thread::spawn(|| {
+        //     println!("Before identify");
+        //     identify(stop_flag); 
+        //     println!("After identify");
+        // }));
+		response = json!({
+            "responseType": 0,
+            "responseMsg" : "Attendance mode started."
+        });
+	} else {
+        response = json!({
+            "responseType": 2,
+            "responseMsg": "Default Message"
+        });
+    } 
+    //if let Some(serde_json::Value) = response {
+    client.write_all(response.to_string().as_bytes()).await?;
+    println!("Response sent: {}", response);
+    Ok(())
+}
+
+async fn reject_client(mut client: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
+    // let mut buffer = [0; 1024];
+    // let n = client.read(&mut buffer).await?;
+    // let msg_from_client = String::from_utf8_lossy(&buffer[..n]);
+    //println!("{}", msg_from_client);
+    let response = json!({
+        "responseType": 2,
+        "responseMsg" : "Another procedure is using the scanner!"
+    });
+    client.write_all(response.to_string().as_bytes()).await?;
+    println!("Client rejected: {}", response);
+    Ok(())
+}
+
+fn close_device() -> Result<(), Box<dyn std::error::Error>> {
+    //close fp device here
+    //Get FpContext to get devices
+    let context = FpContext::new();
+    println!("Context retrieved");
+    //Use FpContext to get devices (returns a vector/array of devices)
+    let devices = context.devices();
+    println!("Devices retrieved");
+    for device in devices {
+        if device.is_open(){
+            device.close_sync(None).unwrap();
+            println!("Device closed");
+        }
+    }
+    Ok(())
+}
+
+
+
+
+
+
+//will listen whether enroll or verify (asynchronously)
+//spawn a thread to enroll
+//spawn a thread to verify

@@ -1,0 +1,26 @@
+/*
+Algorithm:
+
+loop forever {
+get message from stomp broker
+add message to queue
+
+dequeue message
+if enroll:
+check if we have a current task
+if task is enroll, send the last message to resume state
+if we do, send message to server
+otherwise, spawn a thread to enroll
+
+if verify:
+check if we have a current task
+if task is verify, send the last message to resume state
+if not, send message to server
+otherwise, spawn a thread to verify
+
+if disconnect:
+destroy thread
+
+repeat loop
+}
+*/

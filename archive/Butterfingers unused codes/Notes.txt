@@ -1,0 +1,1 @@
+*mut std::ffi::c_void is a mutable *raw pointer* to ffi's void in c

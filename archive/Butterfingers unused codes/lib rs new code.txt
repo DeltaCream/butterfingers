@@ -1,0 +1,575 @@
+pub use butterfingersd_enroll::enroll as enroll;
+pub use butterfingersd_identify::identify as identify;
+
+
+
+pub mod butterfingersd_enroll {
+    use std::{
+        env, 
+        fs::OpenOptions,
+        io::{self, Write}, 
+        sync::{Arc, Mutex},
+    };
+    
+    use libfprint_rs::{
+        FpContext, 
+        FpPrint, 
+        FpDevice,
+        Cancellable,
+    };
+    
+    use sqlx::{
+        MySqlPool,
+        Row,
+    };
+    
+    use tokio::runtime::Runtime;
+    use uuid::Uuid;
+    
+
+    pub fn enroll(emp_id: u64) { //entry point of the program
+        enroll_employee(emp_id).unwrap();
+    }
+    
+    fn enroll_employee(emp_id: u64) -> anyhow::Result<()> { //list employees which are candidates for enrollment
+        dotenvy::dotenv()?;
+    
+        //generates a random uuid
+        let uuid = Uuid::new_v4();
+    
+        //enroll fingerprint
+        let context = FpContext::new();
+        let devices = context.devices();
+        let fp_scanner = devices.first().expect("Devices could not be retrieved");
+    
+        // println!("{:#?}", fp_scanner.scan_type()); //print the scan type of the device (for debugging purposes)
+        // println!("{:#?}", fp_scanner.features());  //print the features of the device (for debugging purposes)
+    
+        //open the fingerprint scanner
+        //fp_scanner.open_sync(None).expect("Device could not be opened");
+        fp_scanner.open_sync(Some(&Cancellable::new())).expect("Device could not be opened");
+    
+        //create a template for the user
+        let template = FpPrint::new(fp_scanner);
+    
+        //still not sure if the *kind* of finger is to be included as fingerprint metadata
+        //template.set_finger(FpFinger::RightIndex);
+    
+        //set the username of the template to the uuid generated
+        template.set_username(&uuid.to_string()); 
+    
+        //print username of the fingerprint template for debugging purposes
+        //(fingerprint template SHOULD have a username at this point)
+        println!("Username of the fingerprint: {}", template.username().expect("Username should be included here"));
+    
+        //counter for later use
+        let counter = Arc::new(Mutex::new(0));
+    
+        //prompt for the user
+        println!("Please put your right index finger onto the fingerprint scanner.");
+    
+        //scan a new fingerprint
+        let new_fprint = fp_scanner
+            .enroll_sync(template, None, Some(enroll_cb), None)
+            .expect("Fingerprint could not be enrolled");
+    
+        //println!("new_print contents: {:#?}",new_fprint);   //print the FpPrint struct (for debugging purposes)
+        //println!("new_print username: {:#?}",new_fprint.username().unwrap());   //print the username of the FpPrint (for debugging purposes)
+    
+        //close the fingerprint scanner
+        fp_scanner.close_sync(None).expect("Device could not be closed");
+    
+        //show the total enroll stages (for debugging purposes)
+        println!("Total enroll stages: {}", counter.lock().unwrap());
+    
+        //create a file to store the fingerprint in (at the root folder, which is securely located in the home directory)
+        let mut file = OpenOptions::new()
+                                .write(true)
+                                .create(true)
+                                .open(dirs::home_dir()
+                                                .expect("Failed to get home directory")
+                                                .join(format!("print/fprint_{}",uuid)))
+                                .expect("Creation of file failed");
+    
+        //fingerprint serialized for storage at the file location
+        file.write_all(&new_fprint.serialize().expect("Could not serialize fingerprint"))
+            .expect("Error: Could not store fingerprint to the txt file");
+    
+    
+        let rt = Runtime::new().expect("Failed to create Tokio runtime");
+        rt.block_on(async {
+            //connect to the database
+            let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap()).await.unwrap();
+            //call save_fprint_identifier stored procedure using the emp_id (from the row queried) and uuid (randomly generated and attached to the fingeprint)
+            let insert = sqlx::query!("CALL save_fprint_identifier(?,?)",emp_id,uuid.to_string())
+                .execute(&pool) //execute the stored prodcedure
+                .await.unwrap(); //wait for the query to finish
+            //if the query was successful
+            match insert.rows_affected() { //check how many rows were affected by the stored procedure that was previously queried
+                0 => println!("No rows affected"),
+                _ => println!("Rows affected: {}", insert.rows_affected()),
+            }
+            pool.close().await; //close connection to database
+        });
+        
+        Ok(()) //return the function with no errors
+    }
+
+    
+    //function below is a callback function for the enroll function's progress
+    pub fn progress_cb(
+        _device: &FpDevice,
+        enroll_stage: i32,
+        _print: Option<FpPrint>,
+        _error: Option<glib::Error>,
+        data: &Option<Arc<Mutex<i32>>>,
+    ) {
+        if let Some(data) = data {
+            let mut d = data.lock().unwrap();
+            *d += 1;
+        }
+        //print enroll stage of the enroll function
+        println!("Progress_cb Enroll stage: {}", enroll_stage);
+    }
+
+    //function below is a callback function for the enroll function's stage
+    pub fn enroll_cb(
+        _device: &FpDevice, 
+        enroll_stage: i32, 
+        _print: Option<FpPrint>, 
+        _error: Option<libfprint_rs::GError>, 
+        _data: &Option<i32>,
+    ) {
+        //print enroll stage of the enroll function
+        println!("Enroll_cb Enroll stage: {}", enroll_stage);
+    }
+}
+
+pub mod butterfingersd_identify {
+    use std::{
+        env, fs::{self, OpenOptions}, io::{self, BufReader, Read}, sync::Arc, time::Duration
+    };
+    
+    use futures::{future, SinkExt, StreamExt, TryStreamExt};
+    use libfprint_rs::{
+        Cancellable, FpContext, FpDevice, FpPrint
+    };
+    use serde_json::{json, Value};
+    use serde::Deserialize;
+    use sqlx::MySqlPool;
+    use tokio::{runtime::Runtime, sync::Mutex};
+    use tokio::net::{TcpListener, TcpStream};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio_stomp::*;
+    //use futures::Either;
+
+    #[derive(Deserialize, Debug)]
+	pub struct ConnectionMessage {
+		pub fingerprintMode: String,
+		pub empID: Option<u64>,
+	}
+    
+
+    async fn from_butterfingers(receiver: String, message: String) -> Result<String, anyhow::Error> {
+        dotenvy::dotenv()?;
+        let target_host = &env::var("TARGET_HOST")?;
+        let target_port = &env::var("TARGET_PORT")?;
+
+        // let conn = client::connect(
+        //     format!("{}:{}", target_host, target_port),
+        //     Some("/".to_string()),
+        //     "guest".to_string().into(),
+        // )
+        // .await?;
+
+        // tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // let (mut sink, stream) = conn.split();
+
+        // //subscribe
+        // let fut1 = async move {
+        //     sink.send(client::subscribe("wss://localhost/attendance/gs-guide-websocket", "myid")).await;
+        //     println!("Subscribe sent");
+
+        //     tokio::time::sleep(Duration::from_millis(200)).await; //sleep for 200 ms
+
+        //     sink.send(
+        //         ToServer::Send {
+        //             destination: "wss://localhost/attendance/gs-guide-websocket.into(),
+        //             transaction: None,
+        //             headers: None,
+        //             body: Some(b"Hello there rustaceans!".to_vec()),
+        //         }
+        //         .into(),
+        //     )
+        //     .await;
+        //     println!("Message sent");
+
+        //     tokio::time::sleep(Duration::from_millis(200)).await;
+
+        //     sink.send(ToServer::Unsubscribe { id: "myid".into() }.into())
+        //         .await;
+        //     println!("Unsubscribe sent");
+
+        //     tokio::time::sleep(Duration::from_millis(200)).await;
+
+        //     tokio::time::sleep(Duration::from_secs(1)).await;
+        //     sink.send(ToServer::Disconnect { receipt: None }.into())
+        //         .await;
+        //     println!("Disconnect sent");
+        //     Ok(())
+        // };
+
+        // // Listen from the main thread. Once the Disconnect message is sent from
+        // // the sender thread, the server will disconnect the client and the future
+        // // will resolve, ending the program
+        // let fut2 = stream.try_for_each(|item| {
+        //     if let FromServer::Message { body, .. } = item.content {
+        //         println!(
+        //             "Message received: {:?}",
+        //             String::from_utf8_lossy(&body.unwrap())
+        //         );
+        //         let message_body = serde_json::from_str(&String::from_utf8_lossy(&body.unwrap())).unwrap();
+        //     } else {
+        //         println!("{:?}", item);
+        //     }
+        //     future::ready(Ok(()))
+        // });
+
+        // futures::future::select(Box::pin(fut1), Box::pin(fut2))
+        //     .await
+        //     .factor_first()
+        //     .0
+
+    let result: String = String::new();
+        //TcpStream::connect because we want to connect to the server
+        let mut client = TcpStream::connect(format!("{}:{}", target_host, target_port)).await?;
+            
+        //let mut input = String::new();
+        //print!("Message: ");
+        //io::stdout().flush()?; //flushes out everything stored in stdout to receive input with no problems
+        //io::stdin().read_line(&mut input)?; //read input and store in variable input of String type
+
+        let message_body = json!({"receiver": receiver.trim(), "message": message}); //message converted into a json Value type
+        let message_string = serde_json::to_string(&message_body)?; //line above converted from json Value type to a string
+        let message_length = message_string.len();
+        let post_message = format!("POST /attendance/kiosk/api/sendMessage HTTP/1.1\r\nHost: {}:{}", target_host, target_port) +
+            "\r\nContent-Type: application/json\r\n" +
+            &format!("Content-Length: {}\r\nConnection: close\r\n\r\n{}", message_length, message_string); //the entire post_message
+        
+        println!("post message: {}", post_message); //print the post message to the command line
+
+        client.write_all(post_message.as_bytes()).await?; //send post_message as u8 (bytes), with matching async support via await
+
+        let mut response = vec![0; 1024]; //allocate an array of 1024 bytes for the response to be stored
+        let n = client.read(&mut response).await?; //read a response to the client via the socket with async support via await
+        println!("response: {}", String::from_utf8_lossy(&response[..n])); //print the response to the command line
+    	let result = String::from_utf8_lossy(&response[..n]);
+        println!("result: {}", result);
+
+    Ok(result.to_string())
+}
+    //#[tokio::main]
+    pub fn identify(stop_flag: Arc<std::sync::Mutex<bool>>) {
+        //Get FpContext to get devices
+        let context = FpContext::new();
+        //Use FpContext to get devices (returns a vector/array of devices)
+        let devices = context.devices();
+        //Get the first device (which, in this case, is the only device, and it is the fingerprint scanner)
+        let fp_scanner = devices.first().expect("Devices could not be retrieved");
+        
+        //Open the fingerprint scanner
+        //fp_scanner.open_sync(None).expect("Device could not be opened");
+        fp_scanner.open_sync(Some(&Cancellable::new())).expect("Device could not be opened");
+    
+        // Get a list of all entries in the folder
+        let entries = fs::read_dir(dirs::home_dir()
+                                                    .expect("Home directory could not be found")
+                                                    .join("print/"))
+                                    .expect("Could not read the directory");
+    
+        // Extract the filenames from the directory entries and store them in a vector
+        let file_names: Vec<String> = entries
+            .filter_map(|entry| {
+                let path = entry.ok()?.path();
+                if path.is_file() {
+                    path.file_name()?.to_str().map(|s| s.to_owned())
+                } else {
+                    None
+                }
+            })
+            .collect();
+    
+        // Print the list of files (for debugging purposes, commented out on production)
+        // println!("File names: {:?}", file_names);
+    
+        // Iterate over the file names
+        let fingerprints = file_names.iter().map(|filename| { //for every file name
+            //go to the directory where the file will be placed
+            let fpprint_file = OpenOptions::new()
+                                        .read(true)
+                                        .open(dirs::home_dir()
+                                                        .expect("Home directory could not be found")
+                                                        .join(format!("print/{}",filename)))
+                                        .expect("Could not read the fingerprint file");
+    
+            //create a buffer for the files
+            let mut reader = BufReader::new(fpprint_file);
+            let mut buffer = Vec::new();
+    
+            //read file into buffer vector
+            reader.read_to_end(&mut buffer).expect("Could not retrieve contents of file");
+    
+            //deserialize the fingerprint stored in the file
+            let deserialized_print = FpPrint::deserialize(&buffer);
+    
+            //retrieve the enrolled print from deserialized_print
+            deserialized_print.expect("Could not unwrap the deserialized print") //let enrolled_print = deserialized_print.expect("Could not unwrap the deserialized print");
+        }).collect::<Vec<FpPrint>>();
+    
+        // for (i, fingerprint) in fingerprints.iter().enumerate() {
+        //     //print the fingeprint number (on the array of fingerprints returned) and its corresponding username
+        //     println!("Username for Fingerprint #{}: {:?}", i, fingerprint.username().expect("Fingerprint username could not be retrieved"));
+        // }
+    
+        //print that the fingerprints are retrieved (for debugging purposes, commented out on production)
+        println!("Fingerprints retrieved");
+    
+        let mut number_of_tries = 0;
+    
+        loop { //equivalent to while(true)
+            if *stop_flag.lock().unwrap() {
+                break; // Exit the loop to stop the thread
+            }
+            if number_of_tries >= 3 { //if condition for manual attendance is satisfied
+                loop {
+                    if number_of_tries < 3 {
+                        break;
+                    }
+
+                    dotenvy::dotenv().unwrap();
+                    let target_host = env::var("TARGET_HOST").unwrap();
+                    let target_port = env::var("TARGET_PORT").unwrap();
+                    let listen_host = env::var("LISTEN_HOST").unwrap();
+                    let listen_port = env::var("LISTEN_PORT").unwrap();
+                    let mut message_body: Value = Default::default();
+                    let rt = Runtime::new().expect("Failed to create Tokio runtime");
+                    rt.block_on(async {
+                        println!("Establishing connection");
+                        let mut conn = client::connect( //returns a message stream and sender
+                            format!("{}:{}",listen_host, listen_port),
+                            "/attendance/gs-guide-websocket",
+                            None,
+                            None,
+                        )
+                        .await
+                        .expect("Connection cannot be started");
+
+                        println!("Connection established");
+                    
+                        conn.send(client::subscribe("/topic/fprintMessagesToIdentifyManualAttendance", "butterfingers")).await.unwrap();
+
+                        println!("Subscribed to topic");
+
+                        while let Some(item) = conn.next().await {
+                            if let FromServer::Message { body, .. } = item.unwrap().content {
+                              println!("{:?}", body);
+                              message_body = serde_json::from_str(&String::from_utf8_lossy(&body.unwrap())).unwrap();
+                              let emp_id = message_body["empID"].as_u64().unwrap();
+                              match manual_attendance(emp_id) {
+                                  Ok(_) => {
+                                      println!("Manual attendance successful");
+                                      break;
+                                  },
+                                  Err(_) => {
+                                      println!("Manual attendance failed");
+                                      continue;
+                                  }
+                              }
+                            }
+                        }
+
+                        conn.send(ToServer::Unsubscribe { id: "butterfingers".into() }.into()).await.unwrap();
+
+                        conn.send(ToServer::Disconnect { receipt: None }.into()).await.unwrap();
+
+                        number_of_tries = 0;
+                    });
+                }
+            } else { //if condition for manual attendance is not satisfied
+                //println!("Before new_print declaration"); //for debugging purposes
+    
+                // The variable that will hold the new fingerprint
+                let mut new_print = FpPrint::new(fp_scanner);
+    
+                //prompt for the user to scan their fingerprint
+                println!("Please scan your fingerprint");
+    
+                //identify the scanned fingerprint from the list of fingerprints that were previously stored from enrollment
+                let print_identified = fp_scanner.identify_sync(&fingerprints, None, Some(match_cb), None, Some(&mut new_print)).expect("Fingerprint could not be identified due to an error");
+                
+                if print_identified.is_some() { //if print_identified identified a fingerprint
+                    let fprint = print_identified.expect("Print could not be unwrapped");
+                    //retrieves the username of the fingerprint (remember that the username is part of the fingerprint's metadata)
+                    let uuid = fprint.username();
+                    match uuid { //switch statement
+                        Some(uuid) => { //if the uuid contained a string (which is the username)
+                            //print the uuid of the fingerprint
+                            println!("UUID of the fingerprint: {}", uuid);
+                            //call record_attendance function (non-manual attendance)
+                            let result = record_attendance(&uuid);
+                            if result.is_ok() { //if nothing wrong happened with record_attendance function
+                                //show that attendance was recorded for "employee name"
+                                println!("Attendance recorded for {}", employee_name_from_uuid(&uuid));
+                                //reset number of tries
+                                number_of_tries = 0;
+                            } else { //if something wrong happened with record_attendance function
+                                //show that attendance could not be recorded
+                                println!("Attendance could not be recorded");
+                                //increment number of tries, possibly resulting to manual attendance in the next iteration of the loop
+                                number_of_tries += 1;
+                            }
+                        },
+                        None => {
+                            println!("UUID could not be retrieved"); //uuid did not contain a string (essentially None acts as a null value)
+                            number_of_tries += 1;
+                        },
+                    }
+                    //println!("UUID of the fingerprint: {}", uuid);
+                } else { //print_identified did not identify a fingerprint
+                    println!("No matching fingerprint could be found");
+                    number_of_tries += 1;
+                }
+            }
+            
+        }
+        fp_scanner.close_sync(None).expect("Device could not be closed");
+    }
+    
+    //async fn 
+    
+    fn record_attendance(uuid: &str) -> Result<(), Box<dyn std::error::Error>> {
+        //setup involving the .env file
+        dotenvy::dotenv()?;
+
+        let rt = Runtime::new().expect("Failed to create Tokio runtime");
+            rt.block_on(async {
+            //connect to the database
+            let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap()).await.unwrap();
+            //query the record_attendance stored procedure (non-manual attendance)
+            let result = sqlx::query!("CALL record_attendance(?)", uuid)
+                .execute(&pool) //execute the query
+                .await //wait for the query to finish (some asynchronous programming shenanigans)
+                .unwrap();
+            //if the query was successful
+            if result.rows_affected() > 0 {
+                println!("Attendance recorded"); //print that the attendance was recorded
+            }
+            pool.close().await; //close connection to database
+        });
+
+        Ok(()) //return from the function with no errors
+    }
+
+    
+    fn manual_attendance(emp_id: u64) -> Result<(), Box<dyn std::error::Error>> {
+        //setup involving the .env file
+        dotenvy::dotenv()?;
+        let mut success = false;
+        //connect to the database
+        let rt = Runtime::new().expect("Failed to create Tokio runtime");
+            rt.block_on(async {
+            
+            let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap()).await.unwrap();
+            //query the record_attendance_by_empid stored procedure (manual attendance)
+            let result = sqlx::query!("CALL record_attendance_by_empid(?)", emp_id)
+                .execute(&pool)//execute the query
+                .await
+                .unwrap(); //wait for the query to finish (some asynchronous programming shenanigans)
+            //if the query was successful
+            if result.rows_affected() > 0 {
+                println!("Attendance manually recorded"); //print that the attendance was recorded
+                success = true;
+            } else {
+                println!("Attendance could not be recorded");
+                success = false;
+            }
+            pool.close().await;
+        });
+        if success {
+            Ok(()) //return from the function with no errors
+        } else {
+            Err("Error: attendance could not be recorded".into())
+        }
+        //Ok(()) //return from the function with no errors
+    }
+    
+    
+    
+    fn employee_name_from_uuid(uuid: &str) -> String {
+        dotenvy::dotenv().unwrap();
+
+        let mut emp_name = String::new();
+
+        let rt = Runtime::new().expect("Failed to create Tokio runtime");
+            rt.block_on(async {
+            let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap()).await.unwrap();
+            let result = sqlx::query!(r#"SELECT enrolled_fingerprints.fprint_uuid AS "uuid", employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" 
+            FROM enrolled_fingerprints JOIN employee USING(emp_id) WHERE fprint_uuid = ?"#, uuid)
+                .fetch_one(&pool)
+                .await
+                .expect("Could not retrieve employee name from uuid");
+            pool.close().await;
+            match (result.fname, result.mname, result.lname) {
+                (fname, Some(mname), lname) => emp_name = format!("{} {} {}", fname, mname, lname),
+                (fname, None, lname) => emp_name = format!("{} {}", fname, lname),
+            }
+        });
+
+        emp_name
+    }
+    
+    fn employee_name_from_empid(emp_id: &u64) -> String {
+        dotenvy::dotenv().unwrap();
+
+        let mut emp_name = String::new();
+        
+        let rt = Runtime::new().expect("Failed to create Tokio runtime");
+            rt.block_on(async {
+            let pool = MySqlPool::connect(&env::var("DATABASE_URL").unwrap()).await.unwrap();
+            let result = sqlx::query!(//r#"SELECT production_staff.emp_id AS "emp_id", 
+            //employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" FROM production_staff JOIN employee USING(emp_id) WHERE emp_id = ?"#, emp_id)
+                r#"SELECT employee.emp_id AS "emp_id", employee.fname AS "fname", employee.mname AS "mname", employee.lname AS "lname" FROM employee WHERE role_code = 2 AND emp_id = ?"#, emp_id)
+                .fetch_one(&pool)
+                .await
+                .expect("Could not retrieve employee name from employee id");
+            pool.close().await;
+            match (result.fname, result.mname, result.lname) {
+                (fname, Some(mname), lname) => format!("{} {} {}", fname, mname, lname),
+                (fname, None, lname) => format!("{} {}", fname, lname),
+            }
+        });
+
+        emp_name
+    }
+    
+    //function below is a callback function that is called when a scanned fingerprint is matched with previously enrolled fingerprints
+    pub fn match_cb(
+        _device: &FpDevice,
+        matched_print: Option<FpPrint>,
+        print: FpPrint,
+        _error: Option<libfprint_rs::GError>,
+        _data: &Option<()>,
+    ) {
+        if let Some(matched_print) = &matched_print { //get the matched print
+            //print the matched print's username
+            println!("Matched print: {:#}", matched_print.username().expect("Fingerprint username could not be retrieved"));
+    
+            print.set_username(&matched_print.username().expect("Username could not be retrieved"));
+            
+        } else { 
+            //print that no fingerprint was matched with the scanned fingerprint
+            println!("Not matched");
+        }
+    }
+}

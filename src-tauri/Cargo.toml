@@ -8,12 +8,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [build-dependencies]
-tauri-build = { version = "1", features = [] }
+tauri-build = { version = "2.0.3" }
 
 [dependencies]
-tauri = { version = "1", features = [ "dialog-message", "dialog-confirm", "shell-open"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+tauri = { version = "2.1.1" }
+serde = { version = "1.0.216", features = ["derive"] }
+serde_json = "1.0.133"
 libfprint-rs = {git = "https://github.com/dyharlan/libfprint-rs.git"}
 sqlx = { version = "0.7.2", features = ["runtime-tokio", "mysql", "macros", "time", "uuid"] } #"runtime-async-std"
 dotenvy = "0.15.7"
@@ -23,9 +23,9 @@ dotenvy_macro = "0.15.7"
 dirs = "5.0.1"
 users = "0.11.0"
 prettytable = "0.10.0" # from butterfingersd-enroll
-glib = "0.19.0" # from butterfingersd-verify
-futures = "0.3.30"
-tokio = { version = "1.36.0", features = ["full"] }
+glib = "0.20.6" # from butterfingersd-verify
+futures = "0.3.31"
+tokio = { version = "1.42.0", features = ["full"] }
 
 [features]
 # This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!

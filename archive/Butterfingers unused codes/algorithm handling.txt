@@ -1,0 +1,65 @@
+// let (client, addr) = server.accept().await.unwrap(); //client is a stream
+        // println!("[*] Accepted connection from: {}", stream.peer_addr().unwrap());
+        
+        // tokio::spawn(async move {
+        //     if let Ok(mut ws_stream) = accept_async(stream).await {
+        //         // Handle WebSocket connection
+        //         //this is where the code for handle_client will go
+        //         let buffer = [0; 1024];
+        //         while let Some(Ok(message)) = ws_stream.next().await {
+        //             match message {
+        //                 Message::Text(text) => {
+        //                     // Handle text message
+        //                     println!("Received text message: {}", text);
+        //                 }
+        //                 Message::Binary(data) => {
+        //                     // Handle binary message
+        //                     println!("Received binary message: {:?}", data);
+        //                 }
+        //                 _ => {
+        //                     // Handle other message types if necessary
+        //                 }
+        //             }
+        //         }
+
+        //         // Handle disconnection
+        //         let response = String::from("Server Acknowledged!");
+        //         ws_stream.send(Message::Text(response)).await.unwrap();
+        //         ws_stream.close(None).await.unwrap();
+        //     } else {
+        //         // Handle failed WebSocket connection
+        //         // You can implement your error handling logic here
+        //         //print the details of the websocket error
+        //         println!("WebSocket connection failed");
+        //     }
+        // }); //spawns an asynchronous thread and executes it
+
+        // for stream in server.incoming() {
+        //     let stream = stream.unwrap();
+        //     let mut ws_stream = accept(stream).unwrap();
+    
+        //     thread::spawn(move || {
+        //         // Handle WebSocket connection
+        //         // You can implement your WebSocket message handling logic here
+        //         let request = ws_stream.read().unwrap();
+        //         let msg_from_client = request.to_text().unwrap();
+        //         println!("[*] Received message from client: {}", msg_from_client);
+        //         let response = String::from("Server Acknowledged!");
+        //         ws_stream.write(tokio_tungstenite::tungstenite::Message::Text(response)).unwrap();
+        //         ws_stream.close(None).unwrap();
+        //     });
+        // }
+
+        // let (client, addr) = server.accept().await.unwrap();
+        // println!("[*] Accepted connection from: {}", addr);
+        // thread::spawn(move || {
+        //     // Handle WebSocket connection
+        //     let mut buffer = [0; 1024];
+        //     let request = client.read_exact(&mut buffer).await.unwrap();
+        //     let msg_from_client = request.to_text().unwrap();
+        //     println!("[*] Received message from client: {}", msg_from_client);
+        //     let response = String::from("Server Acknowledged!");
+        //     client.write(&response.as_bytes()).unwrap();
+        //     client.close().unwrap();
+        // });
+        //println!("[*] Accepted connection from: {}", addr);
